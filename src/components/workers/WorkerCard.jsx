@@ -1,0 +1,141 @@
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Wrench, Hammer, Gauge, Zap, Flame, Disc, User, Users,
+  ChevronDown, Moon, Flame as OverloadIcon, CheckCircle2, AlertTriangle,
+} from 'lucide-react';
+import { utilTone } from '../../lib/styleMaps.js';
+import Badge from '../ui/Badge.jsx';
+import AnimatedNumber from '../ui/AnimatedNumber.jsx';
+
+const DEPT_ICON = { mech: Wrench, dent: Hammer, bal: Gauge, elec: Zap, weld: Flame, tire: Disc };
+const BAR_COLOR = { green: 'bg-emerald-500', amber: 'bg-amber-500', red: 'bg-red-500' };
+
+/** Classifies a department purely from its already-computed busy/total/
+ *  utilization numbers — no new calculations, just labeling the existing
+ *  values. The engine never lets deptBusy exceed deptAvail, so "overloaded"
+ *  here means sustained heavy load (>=85% busy) rather than literal
+ *  over-capacity — the same 85% threshold already used elsewhere
+ *  (utilTone / bottleneck detection) for consistency. */
+function classify(dept) {
+  if (dept.total === 0) return 'empty';
+  if (dept.busy === 0) return 'idle';
+  if (dept.busy === dept.total) return 'full';
+  if (dept.utilization >= 0.85) return 'overloaded';
+  return 'normal';
+}
+
+const STATE_STYLE = {
+  idle: { stripe: 'border-l-blue-300', tint: 'bg-blue-50/50', tag: 'blue', label: 'Idle', icon: Moon },
+  full: { stripe: 'border-l-amber-400', tint: 'bg-amber-50/50', tag: 'amber', label: 'Fully Occupied', icon: CheckCircle2 },
+  overloaded: { stripe: 'border-l-red-400', tint: 'bg-red-50/50', tag: 'red', label: 'Overloaded', icon: OverloadIcon },
+  normal: { stripe: 'border-l-transparent', tint: '', tag: null, label: null, icon: null },
+  empty: { stripe: 'border-l-transparent', tint: '', tag: null, label: null, icon: null },
+};
+
+const BOTTLENECK_STYLE = { stripe: 'border-l-red-500', tint: 'bg-red-50/70', tag: 'red', label: 'Bottleneck', icon: AlertTriangle };
+
+/** An interactive department card: icon, busy/available/total headcounts,
+ *  utilization badge + smoothly animated bar, small worker avatars, and a
+ *  highlighted state (idle / fully occupied / overloaded / the system's
+ *  current bottleneck). Click to expand the roster's skill composition
+ *  (High/Med/Low/Absent — read directly from the run's config, display-
+ *  only). All numbers are read as-is from `dept`/`roster`; nothing here
+ *  recomputes anything. */
+export default function WorkerCard({ dept, roster, isBottleneck }) {
+  const [expanded, setExpanded] = useState(false);
+  const Icon = DEPT_ICON[dept.key] || User;
+  const tone = utilTone(dept.utilization);
+  const dots = Math.min(dept.total, 12);
+  const state = classify(dept);
+  const style = isBottleneck ? BOTTLENECK_STYLE : STATE_STYLE[state];
+  const StateIcon = style.icon;
+
+  return (
+    <motion.div
+      layout
+      whileHover={{ y: -2 }}
+      onClick={() => setExpanded((v) => !v)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded((v) => !v); }}
+      className={`cursor-pointer select-none rounded-lg border border-l-4 border-line ${style.stripe} ${style.tint || 'bg-surface-soft'} p-3 shadow-sm transition-shadow hover:shadow-cardHover ${
+        isBottleneck ? 'ring-2 ring-red-300/70 ring-offset-2 ring-offset-surface' : ''
+      }`}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-ink">
+          <Icon size={14} className="text-brand-600" /> {dept.name}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {style.label && (
+            <Badge tone={style.tag} icon={StateIcon} pulse={isBottleneck}>{style.label}</Badge>
+          )}
+          <Badge tone={tone}>
+            <AnimatedNumber value={dept.utilization * 100} decimals={0} suffix="%" />
+          </Badge>
+        </div>
+      </div>
+
+      <div className="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+        <motion.div
+          className={`h-full rounded-full ${BAR_COLOR[tone]}`}
+          animate={{ width: `${dept.utilization * 100}%` }}
+          transition={{ ease: 'easeOut', duration: 0.4 }}
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-1.5 text-center text-[10.5px]">
+        <div className="rounded-md bg-white/70 py-1">
+          <div className="font-bold text-orange-600">{dept.busy}</div>
+          <div className="text-ink-faint">Busy</div>
+        </div>
+        <div className="rounded-md bg-white/70 py-1">
+          <div className="font-bold text-emerald-600">{dept.available}</div>
+          <div className="text-ink-faint">Available</div>
+        </div>
+        <div className="rounded-md bg-white/70 py-1">
+          <div className="flex items-center justify-center gap-0.5 font-bold text-ink">
+            <Users size={10} /> {dept.total}
+          </div>
+          <div className="text-ink-faint">Total</div>
+        </div>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-1">
+        {Array.from({ length: dots }).map((_, i) => (
+          <User key={i} size={11} className={i < dept.busy ? 'text-orange-500' : 'text-emerald-500'} />
+        ))}
+        {dept.total > 12 && <span className="text-[10px] text-ink-faint">+{dept.total - 12}</span>}
+        <ChevronDown
+          size={13}
+          className={`ml-auto text-ink-faint transition-transform ${expanded ? 'rotate-180' : ''}`}
+        />
+      </div>
+
+      <AnimatePresence initial={false}>
+        {expanded && roster && (
+          <motion.div
+            initial={{ height: 0, opacity: 0, marginTop: 0 }}
+            animate={{ height: 'auto', opacity: 1, marginTop: 8 }}
+            exit={{ height: 0, opacity: 0, marginTop: 0 }}
+            transition={{ duration: 0.22, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="rounded-md border border-line bg-white/80 p-2 text-[10.5px]">
+              <div className="mb-1 font-bold uppercase tracking-wide text-ink-faint">Roster composition</div>
+              <div className="grid grid-cols-3 gap-1.5 text-center">
+                <div><div className="font-bold text-ink">{roster.high}</div><div className="text-ink-faint">High skill</div></div>
+                <div><div className="font-bold text-ink">{roster.med}</div><div className="text-ink-faint">Med skill</div></div>
+                <div><div className="font-bold text-ink">{roster.low}</div><div className="text-ink-faint">Low skill</div></div>
+              </div>
+              <div className="mt-1.5 text-center text-ink-faint">
+                {roster.total} on roster · {Math.round(roster.absent * 100)}% typical absenteeism
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
