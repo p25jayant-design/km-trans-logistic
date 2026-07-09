@@ -102,7 +102,7 @@ export default function App() {
                     animate={{ width: 320, opacity: 1 }}
                     exit={{ width: 0, opacity: 0 }}
                     transition={{ duration: 0.28, ease: 'easeInOut' }}
-                    className="w-full shrink-0 overflow-hidden lg:sticky lg:top-[74px] lg:w-[320px] lg:self-start"
+                    className="w-full shrink-0 overflow-hidden lg:w-[320px] lg:self-start"
                   >
                     <div className="w-full lg:w-[320px]">
                       <ConfigPanel config={config} setConfig={setConfig} />
