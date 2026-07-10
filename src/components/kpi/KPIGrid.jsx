@@ -25,17 +25,21 @@ export default function KPIGrid({ result, frame }) {
     ? frame.departments.reduce((s, d) => s + d.utilization, 0) / frame.departments.length
     : 0;
 
+  const ks = result.kpiSeries;
+  const fullTimes = ks ? ks.sampleTimes : [];
+  const fullIdleBays = ks ? ks.busyBays.map((b, i) => Math.max(0, (result.cfg.bays.Bu + result.cfg.bays.Be + result.cfg.bays.Bi) - b)) : [];
+
   return (
     <Card title="Live KPIs" icon={BarChart3}>
       <div className="grid grid-cols-2 gap-2.5">
-        <KpiCard icon={Clock3} label="Avg Waiting Time" value={live.avgWait} decimals={0} suffix=" min" trend={trends.queueLen} times={trends.times} color={KPI_COLORS.wait} />
-        <KpiCard icon={ListOrdered} label="Queue Length" value={frame.queueLen} trend={trends.queueLen} times={trends.times} color={KPI_COLORS.queue} />
-        <KpiCard icon={TrendingUp} label="Throughput /day" value={live.throughputPerDay} decimals={1} trend={trends.bayBusyTotal} times={trends.times} color={KPI_COLORS.throughput} />
-        <KpiCard icon={Wrench} label="Busy Bays" value={busyBays} trend={trends.bayBusyTotal} times={trends.times} color={KPI_COLORS.busyBays} />
-        <KpiCard icon={CircleSlash} label="Idle Bays" value={idleBays} trend={trends.bayBusyTotal.map(v => 100 - v)} times={trends.times} color={KPI_COLORS.idleBays} />
-        <KpiCard icon={Users} label="Worker Utilization" value={avgWorkerUtil * 100} decimals={0} suffix="%" trend={trends.deptUtilAvg} times={trends.times} color={KPI_COLORS.workerUtil} />
-        <KpiCard icon={CheckCircle} label="Completed Trucks" value={live.completedCount} trend={trends.bayBusyTotal} times={trends.times} color={KPI_COLORS.completed} />
-        <KpiCard icon={Timer} label="Avg Time in System" value={live.avgSystem} suffix=" min" trend={trends.queueLen} times={trends.times} color={KPI_COLORS.timeInSystem} />
+        <KpiCard icon={Clock3} label="Avg Waiting Time" value={live.avgWait} decimals={0} suffix=" min" trend={trends.queueLen} times={trends.times} fullSeries={ks?.avgWait} fullTimes={fullTimes} color={KPI_COLORS.wait} />
+        <KpiCard icon={ListOrdered} label="Queue Length" value={frame.queueLen} trend={trends.queueLen} times={trends.times} fullSeries={ks?.queueLen} fullTimes={fullTimes} color={KPI_COLORS.queue} />
+        <KpiCard icon={TrendingUp} label="Throughput /day" value={live.throughputPerDay} decimals={1} trend={trends.bayBusyTotal} times={trends.times} fullSeries={ks?.throughputPerDay} fullTimes={fullTimes} color={KPI_COLORS.throughput} />
+        <KpiCard icon={Wrench} label="Busy Bays" value={busyBays} trend={trends.bayBusyTotal} times={trends.times} fullSeries={ks?.busyBays} fullTimes={fullTimes} color={KPI_COLORS.busyBays} />
+        <KpiCard icon={CircleSlash} label="Idle Bays" value={idleBays} trend={trends.bayBusyTotal.map(v => 100 - v)} times={trends.times} fullSeries={fullIdleBays} fullTimes={fullTimes} color={KPI_COLORS.idleBays} />
+        <KpiCard icon={Users} label="Worker Utilization" value={avgWorkerUtil * 100} decimals={0} suffix="%" trend={trends.deptUtilAvg} times={trends.times} fullSeries={ks?.deptUtilPct} fullTimes={fullTimes} color={KPI_COLORS.workerUtil} />
+        <KpiCard icon={CheckCircle} label="Completed Trucks" value={live.completedCount} trend={trends.bayBusyTotal} times={trends.times} fullSeries={ks?.completedCount} fullTimes={fullTimes} color={KPI_COLORS.completed} />
+        <KpiCard icon={Timer} label="Avg Time in System" value={live.avgSystem} suffix=" min" trend={trends.queueLen} times={trends.times} fullSeries={ks?.avgSystem} fullTimes={fullTimes} color={KPI_COLORS.timeInSystem} />
       </div>
     </Card>
   );

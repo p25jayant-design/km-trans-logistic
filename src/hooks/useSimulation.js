@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { simulate, computeUtilSeries, DEFAULT_DEPTS } from '../engine/desEngine.js';
-import { buildFrame } from '../engine/frameSelectors.js';
+import { buildFrame, buildFullKpiSeries } from '../engine/frameSelectors.js';
 
 export const DEFAULT_CONFIG = {
   horizonDays: 30,
@@ -60,6 +60,7 @@ export function useSimulation() {
     const cfg = cfgOverride || config;
     const r = simulate(cfg);
     r.util = computeUtilSeries(r, 150);
+    r.kpiSeries = buildFullKpiSeries(r, 120);
     setResult(r);
     tRef.current = 0;
     setT(0);
