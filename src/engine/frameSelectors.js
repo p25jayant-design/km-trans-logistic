@@ -143,7 +143,7 @@ export function buildFrame(result, t) {
  *  immediately before the current time `t` — a rolling "recent history"
  *  window rather than the full run. */
 export function buildTrends(result, t, windowCount = 24) {
-  if (!result.snapshots.length) return { queueLen: [], bayBusyTotal: [], deptUtilAvg: [] };
+  if (!result.snapshots.length) return { queueLen: [], bayBusyTotal: [], deptUtilAvg: [], times: [] };
   const idx = Math.min(result.snapTimes.length - 1, countLE(result.snapTimes, t));
   const start = Math.max(0, idx - windowCount + 1);
   const slice = result.snapshots.slice(start, idx + 1);
@@ -154,6 +154,7 @@ export function buildTrends(result, t, windowCount = 24) {
     queueLen: slice.map(s => s.queueLen),
     bayBusyTotal: slice.map(s => (totalBays > 0 ? ((s.bay.Bu || 0) + (s.bay.Be || 0) + (s.bay.Bi || 0)) / totalBays : 0) * 100),
     deptUtilAvg: slice.map(s => (deptTotal > 0 ? DEPT_KEYS.reduce((sum, k) => sum + (s.dept[k] || 0), 0) / deptTotal : 0) * 100),
+    times: slice.map(s => s.t),
   };
 }
 
