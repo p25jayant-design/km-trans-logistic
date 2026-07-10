@@ -45,6 +45,8 @@ export function useSimulation() {
   const rafRef = useRef(null);
   const lastTsRef = useRef(null);
   const tRef = useRef(0);
+  const statusRef = useRef(status);
+  statusRef.current = status;
 
   const applyTime = useCallback((newT) => {
     if (!result) return;
@@ -94,7 +96,7 @@ export function useSimulation() {
         next = result.totalDuration;
         setPlaying(false);
         setStatus('complete');
-      } else {
+      } else if (statusRef.current !== 'running') {
         setStatus('running');
       }
       tRef.current = next;
