@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import { Line } from 'react-chartjs-2';
 import { LineChart } from 'lucide-react';
 import Card from '../ui/Card.jsx';
 import ChartBox from './ChartBox.jsx';
@@ -46,15 +45,24 @@ export default function ChartsPanel({ result, frame }) {
   return (
     <Card title="Live Charts" icon={LineChart}>
       <div className="flex flex-col gap-3">
-        <ChartBox title="Queue Length vs Time" trend={chartTrend(data.queueSeries, data.idx)}>
-          <Line data={mkChart(data.queueSeries, CHART_LINE_COLORS.queueLength, 'Queue length')} options={BASE_LINE_OPTIONS} />
-        </ChartBox>
-        <ChartBox title="Throughput vs Time (cumulative completions)" trend={chartTrend(data.throughputSeries, data.idx)}>
-          <Line data={mkChart(data.throughputSeries, CHART_LINE_COLORS.throughput, 'Completed trucks')} options={BASE_LINE_OPTIONS} />
-        </ChartBox>
-        <ChartBox title="Average Waiting Time vs Time (min)" trend={chartTrend(data.waitSeries, data.idx)}>
-          <Line data={mkChart(data.waitSeries, CHART_LINE_COLORS.waitTime, 'Avg wait (min)')} options={BASE_LINE_OPTIONS} />
-        </ChartBox>
+        <ChartBox
+          title="Queue Length vs Time"
+          trend={chartTrend(data.queueSeries, data.idx)}
+          data={mkChart(data.queueSeries, CHART_LINE_COLORS.queueLength, 'Queue length')}
+          options={BASE_LINE_OPTIONS}
+        />
+        <ChartBox
+          title="Throughput vs Time (cumulative completions)"
+          trend={chartTrend(data.throughputSeries, data.idx)}
+          data={mkChart(data.throughputSeries, CHART_LINE_COLORS.throughput, 'Completed trucks')}
+          options={BASE_LINE_OPTIONS}
+        />
+        <ChartBox
+          title="Average Waiting Time vs Time (min)"
+          trend={chartTrend(data.waitSeries, data.idx)}
+          data={mkChart(data.waitSeries, CHART_LINE_COLORS.waitTime, 'Avg wait (min)')}
+          options={BASE_LINE_OPTIONS}
+        />
       </div>
       <p className="mt-2 text-[11px] text-ink-faint">
         Detailed per-bay and per-department utilization charts are on the "Bay Utilization" and "Worker Utilization" pages above.

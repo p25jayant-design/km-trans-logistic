@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Line } from 'react-chartjs-2';
 import { Warehouse, Wrench, Clock3 } from 'lucide-react';
 import Card from '../components/ui/Card.jsx';
 import ChartBox from '../components/charts/ChartBox.jsx';
@@ -98,9 +97,9 @@ export default function BayUtilizationPage({ result, frame }) {
           subtitle="Cumulative busy-time / elapsed-time, revealed live"
           trend={chartTrend(seriesInfo ? seriesInfo.series : emptySeries, idx)}
           height={320}
-        >
-          <Line data={chartData} options={{ ...BASE_LINE_OPTIONS, scales: { ...BASE_LINE_OPTIONS.scales, y: { ...BASE_LINE_OPTIONS.scales.y, max: 100 } } }} />
-        </ChartBox>
+          data={chartData}
+          options={{ ...BASE_LINE_OPTIONS, scales: { ...BASE_LINE_OPTIONS.scales, y: { ...BASE_LINE_OPTIONS.scales.y, max: 100 } } }}
+        />
       </Card>
     </div>
   );
