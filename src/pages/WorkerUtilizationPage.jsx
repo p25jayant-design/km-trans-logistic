@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Line } from 'react-chartjs-2';
 import { Users, User } from 'lucide-react';
 import Card from '../components/ui/Card.jsx';
 import ChartBox from '../components/charts/ChartBox.jsx';
@@ -85,9 +84,9 @@ export default function WorkerUtilizationPage({ result, frame }) {
           subtitle="Cumulative busy worker-minutes / available worker-minutes, revealed live"
           trend={chartTrend(series, idx)}
           height={320}
-        >
-          <Line data={chartData} options={{ ...BASE_LINE_OPTIONS, scales: { ...BASE_LINE_OPTIONS.scales, y: { ...BASE_LINE_OPTIONS.scales.y, max: 100 } } }} />
-        </ChartBox>
+          data={chartData}
+          options={{ ...BASE_LINE_OPTIONS, scales: { ...BASE_LINE_OPTIONS.scales, y: { ...BASE_LINE_OPTIONS.scales.y, max: 100 } } }}
+        />
       </Card>
     </div>
   );
