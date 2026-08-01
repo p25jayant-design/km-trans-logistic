@@ -1,14 +1,14 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import {
-  Factory, Settings, Clock3, Activity, AlertTriangle, ListChecks,
+  Factory, Settings, Clock3, Activity, AlertTriangle, ListChecks, Download,
 } from 'lucide-react';
 import Badge from './ui/Badge.jsx';
 import SimulationControls from './SimulationControls.jsx';
 
 export default function Navbar({
   onOpenConfig, clock, status, playing, onPlayPause, onJumpEnd, onReset, onRun,
-  speed, onSpeedChange, eventCount, bottleneck,
+  speed, onSpeedChange, eventCount, bottleneck, onDownload, canDownload,
 }) {
   const statusTone = status === 'running' ? 'blue' : status === 'complete' ? 'green' : status === 'ready' ? 'amber' : 'neutral';
   const statusLabel = { idle: 'Idle', ready: 'Ready', running: 'Running', complete: 'Complete' }[status] || 'Idle';
@@ -34,6 +34,21 @@ export default function Navbar({
             className="flex items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-[12.5px] font-medium text-ink-soft transition-colors hover:bg-surface-soft hover:shadow-sm"
           >
             <Settings size={15} /> Configure
+          </motion.button>
+
+          <motion.button
+            whileHover={canDownload ? { scale: 1.03 } : {}}
+            whileTap={canDownload ? { scale: 0.96 } : {}}
+            onClick={onDownload}
+            disabled={!canDownload}
+            title={canDownload ? 'Download raw per-truck simulation data as .xlsx' : 'Run the simulation first'}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-medium transition-colors ${
+              canDownload
+                ? 'border-line bg-white text-ink-soft hover:bg-surface-soft hover:shadow-sm'
+                : 'cursor-not-allowed border-line bg-surface-soft text-ink-faint/50'
+            }`}
+          >
+            <Download size={15} /> Download Data
           </motion.button>
 
           <div className="flex items-center gap-1.5 rounded-lg border border-line bg-surface-soft px-3 py-1.5 font-mono text-[13px] tabular-nums text-ink">

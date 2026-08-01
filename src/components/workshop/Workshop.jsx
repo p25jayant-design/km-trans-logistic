@@ -5,6 +5,7 @@ import Queue from './Queue.jsx';
 import BayCard from './BayCard.jsx';
 import TruckCard from './TruckCard.jsx';
 import WorkshopOverview from './WorkshopOverview.jsx';
+import WorkshopFloorPlan from './WorkshopFloorPlan.jsx';
 import Card from '../ui/Card.jsx';
 import { getTruckDetails } from '../../engine/frameSelectors.js';
 
@@ -79,6 +80,7 @@ function BaySection({ title, icon: Icon, bays, emptyHint, onInspect, bottleneck 
  *  DES engine's result) and never touches simulation logic. */
 export default function Workshop({ result, frame }) {
   const [exiting, setExiting] = useState([]);
+  const [floorShape, setFloorShape] = useState('L');
   const prevBaysRef = useRef(null);
 
   // Detect bay busy -> idle transitions between consecutive rendered frames
@@ -142,6 +144,10 @@ export default function Workshop({ result, frame }) {
       </div>
 
       <WorkshopOverview result={result} frame={frame} />
+
+      <div className="mb-3">
+        <WorkshopFloorPlan result={result} frame={frame} shape={floorShape} setShape={setFloorShape} />
+      </div>
 
       <LayoutGroup id="workshop-trucks">
         <div className="flex flex-col items-stretch gap-2.5">

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Warehouse, Wrench, Clock3 } from 'lucide-react';
+import { Warehouse, Wrench, Clock3, Download } from 'lucide-react';
 import Card from '../components/ui/Card.jsx';
 import ChartBox from '../components/charts/ChartBox.jsx';
 import Badge from '../components/ui/Badge.jsx';
@@ -8,6 +8,7 @@ import { BASE_LINE_OPTIONS, styledDataset, chartTrend } from '../lib/chartTheme.
 import { countLE, activeIntervalAt } from '../engine/frameSelectors.js';
 import { BAY_TYPE_LABEL, CATEGORY_LABEL } from '../lib/styleMaps.js';
 import { CHART_LINE_COLORS } from '../lib/theme.js';
+import { exportBayUtilizationXlsx } from '../lib/exportXlsx.js';
 
 const TYPE_ORDER = ['Bu', 'Be', 'Bi'];
 
@@ -61,21 +62,31 @@ export default function BayUtilizationPage({ result, frame }) {
         title="Bay Utilization — Single Bay Detail"
         icon={Warehouse}
         right={
-          <select
-            value={selected || ''}
-            onChange={(e) => setSelected(e.target.value)}
-            className="rounded-md border border-line bg-white px-2.5 py-1.5 text-[12.5px] text-ink focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-          >
-            {TYPE_ORDER.map((type) => (
-              result.baySlots[type].length > 0 && (
-                <optgroup key={type} label={`${BAY_TYPE_LABEL[type]} Bays`}>
-                  {result.baySlots[type].map((s) => (
-                    <option key={s.id} value={s.id}>Bay {s.id}</option>
-                  ))}
-                </optgroup>
-              )
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <select
+              value={selected || ''}
+              onChange={(e) => setSelected(e.target.value)}
+              className="rounded-md border border-line bg-white px-2.5 py-1.5 text-[12.5px] text-ink focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+            >
+              {TYPE_ORDER.map((type) => (
+                result.baySlots[type].length > 0 && (
+                  <optgroup key={type} label={`${BAY_TYPE_LABEL[type]} Bays`}>
+                    {result.baySlots[type].map((s) => (
+                      <option key={s.id} value={s.id}>Bay {s.id}</option>
+                    ))}
+                  </optgroup>
+                )
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => exportBayUtilizationXlsx(result)}
+              title="Download every bay's utilization data (summary, full job history, and running utilization over time) as .xlsx"
+              className="flex items-center gap-1.5 rounded-md border border-line bg-white px-2.5 py-1.5 text-[12.5px] font-medium text-ink-soft transition-colors hover:bg-surface-soft hover:shadow-sm"
+            >
+              <Download size={14} /> Download Excel
+            </button>
+          </div>
         }
       >
         <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">

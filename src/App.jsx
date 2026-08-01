@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Factory, Warehouse, Users } from 'lucide-react';
 import { useSimulation } from './hooks/useSimulation.js';
 import { countLE } from './engine/frameSelectors.js';
+import { exportSimulationXlsx } from './lib/exportXlsx.js';
 import Navbar from './components/Navbar.jsx';
 import ConfigPanel from './components/ConfigPanel.jsx';
 import Workshop from './components/workshop/Workshop.jsx';
@@ -84,6 +85,8 @@ export default function App() {
         onSpeedChange={setSpeed}
         eventCount={eventCount}
         bottleneck={frame?.bottleneck}
+        onDownload={() => exportSimulationXlsx(result)}
+        canDownload={!!result}
       />
 
       <BootOverlay open={booting} config={config} onDone={handleBootDone} />

@@ -58,6 +58,12 @@ export function buildFrame(result, t) {
       const iv = activeIntervalAt(slot.intervals, t);
       if (iv) {
         const total = iv.end - iv.start;
+        // Purely read-only lookup of the occupying truck's already-computed
+        // job.req (department -> worker-count map) — used to show worker
+        // icons inside occupied bays. This does not add any new simulation
+        // state: `truck.job.req` already exists on every truck the engine
+        // produced, this just surfaces it in the per-tick bay view model.
+        const truck = result.trucks.find(tr => tr.id === iv.truckId);
         bays[type].push({
           id: slot.id,
           type,
@@ -70,6 +76,7 @@ export function buildFrame(result, t) {
           remainingMin: Math.max(0, iv.end - t),
           progress: total > 0 ? Math.min(1, (t - iv.start) / total) : 1,
           justCompleted: iv.end - t <= 0.001 && iv.end - t > -1,
+          req: truck ? truck.job.req : {},
         });
       } else {
         bays[type].push({ id: slot.id, type, typeLabel: BAY_LABELS[type], status: 'idle' });
@@ -178,6 +185,48 @@ export function liveKpis(result, t) {
     throughputPerDay: days > 0 ? n / days : 0,
     completedCount: n,
   };
+}
+
+/** Full-horizon, coarse (day-scale) version of the KPI-card metrics —
+ *  computed once per run, sampled at `numPoints` evenly-spaced times from
+ *  day 0 through the current run's full duration. This is the "zoomed all
+ *  the way out" counterpart to `buildTrends`' short recent-snapshot window:
+ *  the expanded KPI chart starts zoomed into that fine recent window, and
+ *  pinch-zooming out swaps to this coarser full-run series instead, so the
+ *  same chart can show both "what just happened" and "the whole run so
+ *  far" without ever re-deriving anything beyond what `simulate()` already
+ *  produced. Every value here is computed from the same read-only
+ *  `snapshotAt`/`liveKpis` selectors already used elsewhere — no new
+ *  simulation logic, just resampled at a coarser, fixed grid. */
+export function buildFullKpiSeries(result, numPoints = 120) {
+  const total = result.totalDuration || 1;
+  const sampleTimes = [];
+  for (let i = 0; i <= numPoints; i++) sampleTimes.push((total * i) / numPoints);
+
+  const totalBays = result.cfg.bays.Bu + result.cfg.bays.Be + result.cfg.bays.Bi;
+  const deptTotal = DEPT_KEYS.reduce((s, k) => s + (result.deptAvail[k] || 0), 0);
+
+  const queueLen = [], bayBusyPct = [], deptUtilPct = [], busyBays = [], idleBays = [];
+  const avgWait = [], avgSystem = [], throughputPerDay = [], completedCount = [];
+
+  sampleTimes.forEach((t) => {
+    const snap = result.snapshots.length ? snapshotAt(result, t) : { queueLen: 0, dept: {}, bay: {} };
+    const busyTotal = (snap.bay.Bu || 0) + (snap.bay.Be || 0) + (snap.bay.Bi || 0);
+    queueLen.push(snap.queueLen || 0);
+    bayBusyPct.push(totalBays > 0 ? (busyTotal / totalBays) * 100 : 0);
+    busyBays.push(busyTotal);
+    idleBays.push(Math.max(0, totalBays - busyTotal));
+    const deptBusyTotal = DEPT_KEYS.reduce((s, k) => s + (snap.dept[k] || 0), 0);
+    deptUtilPct.push(deptTotal > 0 ? (deptBusyTotal / deptTotal) * 100 : 0);
+
+    const live = liveKpis(result, t);
+    avgWait.push(live.avgWait);
+    avgSystem.push(live.avgSystem);
+    throughputPerDay.push(live.throughputPerDay);
+    completedCount.push(live.completedCount);
+  });
+
+  return { sampleTimes, queueLen, bayBusyPct, deptUtilPct, busyBays, idleBays, avgWait, avgSystem, throughputPerDay, completedCount };
 }
 
 /** Rolling "average waiting time observed so far, as of each sample time"

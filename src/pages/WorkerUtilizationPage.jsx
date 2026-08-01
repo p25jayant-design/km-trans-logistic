@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Users, User } from 'lucide-react';
+import { Users, User, Download } from 'lucide-react';
 import Card from '../components/ui/Card.jsx';
 import ChartBox from '../components/charts/ChartBox.jsx';
 import Badge from '../components/ui/Badge.jsx';
@@ -9,6 +9,7 @@ import { countLE, snapshotAt } from '../engine/frameSelectors.js';
 import { DEPT_KEYS, DEPT_NAMES } from '../engine/desEngine.js';
 import { utilTone } from '../lib/styleMaps.js';
 import { CHART_LINE_COLORS } from '../lib/theme.js';
+import { exportWorkerUtilizationXlsx } from '../lib/exportXlsx.js';
 
 export default function WorkerUtilizationPage({ result, frame }) {
   const [selected, setSelected] = useState('mech');
@@ -55,15 +56,25 @@ export default function WorkerUtilizationPage({ result, frame }) {
         title="Worker Utilization — Single Department Detail"
         icon={Users}
         right={
-          <select
-            value={selected}
-            onChange={(e) => setSelected(e.target.value)}
-            className="rounded-md border border-line bg-white px-2.5 py-1.5 text-[12.5px] text-ink focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-          >
-            {DEPT_KEYS.map((k) => (
-              <option key={k} value={k}>{DEPT_NAMES[k]}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <select
+              value={selected}
+              onChange={(e) => setSelected(e.target.value)}
+              className="rounded-md border border-line bg-white px-2.5 py-1.5 text-[12.5px] text-ink focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+            >
+              {DEPT_KEYS.map((k) => (
+                <option key={k} value={k}>{DEPT_NAMES[k]}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => exportWorkerUtilizationXlsx(result)}
+              title="Download every department's utilization data (summary, job assignments, and running utilization over time) as .xlsx"
+              className="flex items-center gap-1.5 rounded-md border border-line bg-white px-2.5 py-1.5 text-[12.5px] font-medium text-ink-soft transition-colors hover:bg-surface-soft hover:shadow-sm"
+            >
+              <Download size={14} /> Download Excel
+            </button>
+          </div>
         }
       >
         <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">

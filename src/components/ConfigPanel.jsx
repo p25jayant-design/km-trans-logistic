@@ -1,5 +1,5 @@
-import React from 'react';
-import { Settings, Warehouse, Users, Timer, Dices, LayoutList } from 'lucide-react';
+import React, { useRef } from 'react';
+import { Settings, Warehouse, Users, Timer, Dices, LayoutList, Truck, UserPlus } from 'lucide-react';
 import Card from './ui/Card.jsx';
 import Panel from './ui/Panel.jsx';
 import { DEPT_KEYS, DEPT_NAMES } from '../engine/desEngine.js';
@@ -19,6 +19,8 @@ const inputCls = 'w-full rounded-md border border-line bg-surface-soft px-2.5 py
  *  control-room layout (not a hidden drawer): operators should be able to
  *  glance at and tweak parameters without losing sight of the floor. */
 export default function ConfigPanel({ config, setConfig }) {
+  const skillRefs = useRef({});
+
   const update = (patch) => setConfig((c) => ({ ...c, ...patch }));
   const updateBay = (key, val) => setConfig((c) => ({ ...c, bays: { ...c.bays, [key]: Number(val) || 0 } }));
   const updateDept = (key, field, val) =>
@@ -30,9 +32,37 @@ export default function ConfigPanel({ config, setConfig }) {
       },
     }));
 
+  /** Adds one worker to a department at the given skill level — it joins
+   *  the same `total`/`high`/`med`/`low` counts the DES engine already
+   *  reads (see desEngine.js's `avgSkill` calculation), so the new worker
+   *  is immediately part of the allocation pool and its service-time
+   *  scaling comes out of the exact same, unmodified formula as every
+   *  existing worker in that department. */
+  const addWorker = (deptKey, skillLevel) => {
+    const field = ['high', 'med', 'low'].includes(skillLevel) ? skillLevel : 'high';
+    setConfig((c) => {
+      const d = c.departments[deptKey];
+      return {
+        ...c,
+        departments: {
+          ...c.departments,
+          [deptKey]: { ...d, total: d.total + 1, [field]: d[field] + 1 },
+        },
+      };
+    });
+  };
+
   const applyPreset = (preset) => {
     const bays = preset === 'expansion' ? { Bu: 8, Be: 4, Bi: 1 } : { Bu: 8, Be: 0, Bi: 1 };
     setConfig((c) => ({ ...c, bays }));
+  };
+
+  const carrierPct = Math.round(config.carCarrierPct * 100);
+  const flatbedPct = 100 - carrierPct;
+  const setCarrierPct = (val) => update({ carCarrierPct: Math.min(1, Math.max(0, Number(val) / 100 || 0)) });
+  const setFlatbedPct = (val) => {
+    const fb = Math.min(100, Math.max(0, Number(val) || 0));
+    update({ carCarrierPct: (100 - fb) / 100 });
   };
 
   return (
@@ -47,11 +77,26 @@ export default function ConfigPanel({ config, setConfig }) {
               value={config.horizonDays}
               onChange={(e) => update({ horizonDays: Math.max(1, Number(e.target.value) || 30) })} />
           </Field>
-          <Field label="% Car Carrier arrivals">
-            <input type="number" min={0} max={100} className={inputCls}
-              value={Math.round(config.carCarrierPct * 100)}
-              onChange={(e) => update({ carCarrierPct: Math.min(1, Math.max(0, Number(e.target.value) / 100 || 0)) })} />
-          </Field>
+
+          <div>
+            <div className="mb-1 flex items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
+              <Truck size={12} /> Carrier-Type Probability
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Flatbed %">
+                <input type="number" min={0} max={100} className={inputCls}
+                  value={flatbedPct}
+                  onChange={(e) => setFlatbedPct(e.target.value)} />
+              </Field>
+              <Field label="Car Carrier %">
+                <input type="number" min={0} max={100} className={inputCls}
+                  value={carrierPct}
+                  onChange={(e) => setCarrierPct(e.target.value)} />
+              </Field>
+            </div>
+            <p className="mt-1 text-[10px] text-ink-faint">Auto-normalized — the two always sum to 100%.</p>
+          </div>
+
           <Field label="Scheduling policy">
             <select className={inputCls} value={config.policy} onChange={(e) => update({ policy: e.target.value })}>
               <option value="hybrid">Hybrid (Vehicle Priority + SJF)</option>
@@ -109,6 +154,25 @@ export default function ConfigPanel({ config, setConfig }) {
                 <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                   <Field label="Low"><input type="number" min={0} className={inputCls} value={d.low} onChange={(e) => updateDept(k, 'low', e.target.value)} /></Field>
                   <Field label="Absent %"><input type="number" min={0} max={100} className={inputCls} value={Math.round(d.absent * 100)} onChange={(e) => updateDept(k, 'absent', e.target.value)} /></Field>
+                </div>
+
+                <div className="mt-2 flex items-center gap-1.5 border-t border-line pt-2">
+                  <select
+                    ref={(el) => { skillRefs.current[k] = el; }}
+                    defaultValue="high"
+                    className="flex-1 rounded-md border border-line bg-white px-2 py-1 text-[11px] text-ink focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                  >
+                    <option value="high">New worker — High Skill</option>
+                    <option value="med">New worker — Medium Skill</option>
+                    <option value="low">New worker — Low Skill</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => addWorker(k, skillRefs.current[k]?.value)}
+                    className="flex shrink-0 items-center gap-1 rounded-md bg-brand-600 px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-brand-700 active:scale-95"
+                  >
+                    <UserPlus size={12} /> Add
+                  </button>
                 </div>
               </Panel>
             );
