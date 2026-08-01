@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Wrench, ShieldAlert, Search, Navigation,
+  Wrench, ShieldAlert, Search, Navigation, Truck,
   CheckCircle2, Clock, AlertTriangle, Hammer, Gauge, Zap, Flame, Disc,
 } from 'lucide-react';
 import { LAYOUTS, computeZonePositions, pathIntoBay, pathOutOfBay, accessStub, BAY_W, BAY_H } from '../../lib/floorLayouts.js';
@@ -98,25 +98,22 @@ function zoneBand(zone, positions) {
   return { x: x - BAY_W / 2 - pad, y: Math.min(...ys) - BAY_H / 2 - pad, w: BAY_W + pad * 2, h: Math.max(...ys) - Math.min(...ys) + BAY_H + pad * 2 };
 }
 
-/** The little vehicle glyph rendered inside a `foreignObject` — plain HTML,
- *  not raw SVG shapes, deliberately: `foreignObject` has native x/y/width/
- *  height attributes (same reasoning as motion.rect/motion.text elsewhere
- *  in this file), so animating its position tracks the SVG's viewBox scale
- *  exactly. Its *rotation* is a CSS transform, but a pure rotation (no
- *  translate mixed in) has no such scale ambiguity, so it's safe to pair
- *  with the native-attribute position animation on the same element. */
-function TruckBody({ color, small }) {
-  return (
-    <div className="flex h-full w-full items-center justify-center" style={{ transformOrigin: '50% 50%' }}>
-      <div className="relative" style={{ width: small ? 20 : 24, height: small ? 11 : 13 }}>
-        <div className="absolute inset-0 rounded-[3px] border border-white/70" style={{ background: color }} />
-        <div className="absolute rounded-[2px]" style={{ right: -2, top: 1.5, width: 7, height: small ? 8 : 10, background: color, filter: 'brightness(0.72)' }} />
-        <div className="absolute rounded-full bg-slate-700" style={{ width: 4, height: 4, left: 2, bottom: -2 }} />
-        <div className="absolute rounded-full bg-slate-700" style={{ width: 4, height: 4, right: 6, bottom: -2 }} />
-      </div>
-    </div>
-  );
-}
+/* Note on why bays and traveling trucks are positioned the way they are
+ * below: Framer Motion only recognizes a fixed list of SVG tag names as
+ * "SVG components" it can write native attributes onto (rect, circle, g,
+ * text, line, path, polygon, etc. — see framer-motion's own
+ * `lowercaseSVGElements`). `foreignObject` is NOT in that list, so
+ * `motion.foreignObject`'s animated `x`/`y` silently do nothing and the
+ * element renders at its default (0,0) — every bay card and every
+ * traveling truck collapsed onto the entry gate. Fixed by: (1) bay cards
+ * now sit inside a *plain* (non-motion) `<g transform="translate(x y)">`
+ * — a raw SVG transform ATTRIBUTE, unambiguous user-space units, with a
+ * CSS `transition` on `transform` for the glide, exactly like the
+ * already-working flow-arrow `<g>`s a few lines up — with a static,
+ * never-animated `<foreignObject>` nested inside it for the rich HTML
+ * card; (2) traveling trucks are pure `motion.rect`/`motion.text`, which
+ * — like the bay rects — DO have native x/y and are proven safe for
+ * Framer's keyframe-array position + rotation animation. */
 
 /** Spatial, to-scale rendering of the workshop floor in the selected shape
  *  (L or U — see floorLayouts.js), styled as a digital-twin industrial
@@ -371,16 +368,18 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
                     />
                   )}
 
-                  {/* Workstation card */}
-                  <motion.foreignObject
-                    width={BAY_W}
-                    height={BAY_H}
-                    animate={{ x: rx, y: ry }}
-                    transition={{ duration: 0.5, ease: 'easeInOut' }}
-                    style={{ cursor: busy ? 'pointer' : 'default', overflow: 'visible' }}
+                  {/* Workstation card — plain SVG `transform` attribute on a
+                      non-motion `<g>` (unambiguous user-space units, CSS-
+                      transitioned for the glide) wrapping a static,
+                      never-animated `<foreignObject>`. See the note above
+                      `ZONE_ORDER.map` for why this avoids motion.foreignObject. */}
+                  <g
+                    transform={`translate(${rx} ${ry})`}
+                    style={{ transition: 'transform 0.5s ease-in-out', cursor: busy ? 'pointer' : 'default' }}
                     onMouseEnter={busy ? showHover(bay.truckId) : undefined}
                     onMouseLeave={busy ? clearHover : undefined}
                   >
+                  <foreignObject width={BAY_W} height={BAY_H} style={{ overflow: 'visible' }}>
                     <div
                       className="flex h-full w-full flex-col overflow-hidden rounded-md border-2 shadow-sm"
                       style={{ borderColor: sc.stroke, background: sc.fill }}
@@ -398,7 +397,9 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
                         </span>
                         {busy ? (
                           <>
-                            <span className="font-bold leading-tight text-ink" style={{ fontSize: 8 }}>#{bay.truckId} · {bay.vehicleType}</span>
+                            <span className="flex items-center gap-[2px] font-bold leading-tight text-ink" style={{ fontSize: 8 }}>
+                              <Truck size={8} strokeWidth={2.5} /> #{bay.truckId} · {bay.vehicleType}
+                            </span>
                             <span className="leading-tight text-ink-faint" style={{ fontSize: 6.5 }}>
                               {approaching ? 'Inbound' : `${Math.round(bay.remainingMin)} min left`}
                             </span>
@@ -420,7 +421,8 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
                         )}
                       </div>
                     </div>
-                  </motion.foreignObject>
+                  </foreignObject>
+                  </g>
                 </React.Fragment>
               );
             });
@@ -469,27 +471,55 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
             </text>
           )}
 
-          {/* Trucks actively traveling the corridor — direction-following glyph */}
-          {travelers.map((trip) => (
-            <motion.foreignObject
-              key={`trip-${trip.tripId}`}
-              width={TRUCK_W}
-              height={TRUCK_H}
-              initial={{ x: trip.path[0].x - TRUCK_W / 2, y: trip.path[0].y - TRUCK_H / 2, rotate: trip.rot[0] }}
-              animate={{
-                x: trip.path.map((p) => p.x - TRUCK_W / 2),
-                y: trip.path.map((p) => p.y - TRUCK_H / 2),
-                rotate: trip.rot,
-              }}
-              transition={{ duration: trip.kind === 'enter' ? ENTER_DURATION : EXIT_DURATION, ease: 'easeInOut' }}
-              onAnimationComplete={() => handleTripComplete(trip)}
-              style={{ transformOrigin: '50% 50%', cursor: 'pointer', overflow: 'visible' }}
-              onMouseEnter={showHover(trip.truckId)}
-              onMouseLeave={clearHover}
-            >
-              <TruckBody color={trip.kind === 'enter' ? TRUCK_STATE_COLOR.allocated.hex : TRUCK_STATE_COLOR.completed.hex} />
-            </motion.foreignObject>
-          ))}
+          {/* Trucks actively traveling the corridor — direction-following
+              glyph. `motion.rect` (not foreignObject — see the note above)
+              has native x/y, so its position keyframes track the SVG
+              exactly; `rotate` is a pure CSS rotation with no translation
+              mixed in, which Framer computes around the rect's own
+              geometric center automatically, so heading and position stay
+              in sync through every corner. */}
+          {travelers.map((trip) => {
+            const color = trip.kind === 'enter' ? TRUCK_STATE_COLOR.allocated.hex : TRUCK_STATE_COLOR.completed.hex;
+            const duration = trip.kind === 'enter' ? ENTER_DURATION : EXIT_DURATION;
+            return (
+              <React.Fragment key={`trip-${trip.tripId}`}>
+                <motion.rect
+                  width={TRUCK_W}
+                  height={TRUCK_H}
+                  rx={4}
+                  fill={color}
+                  stroke="#ffffff"
+                  strokeWidth={1.5}
+                  initial={{ x: trip.path[0].x - TRUCK_W / 2, y: trip.path[0].y - TRUCK_H / 2, rotate: trip.rot[0] }}
+                  animate={{
+                    x: trip.path.map((p) => p.x - TRUCK_W / 2),
+                    y: trip.path.map((p) => p.y - TRUCK_H / 2),
+                    rotate: trip.rot,
+                  }}
+                  transition={{ duration, ease: 'easeInOut' }}
+                  onAnimationComplete={() => handleTripComplete(trip)}
+                  className="cursor-pointer"
+                  onMouseEnter={showHover(trip.truckId)}
+                  onMouseLeave={clearHover}
+                />
+                <motion.text
+                  textAnchor="middle"
+                  fontSize={9}
+                  fontWeight={700}
+                  fill="#334155"
+                  pointerEvents="none"
+                  initial={{ x: trip.path[0].x, y: trip.path[0].y - TRUCK_H / 2 - 6 }}
+                  animate={{
+                    x: trip.path.map((p) => p.x),
+                    y: trip.path.map((p) => p.y - TRUCK_H / 2 - 6),
+                  }}
+                  transition={{ duration, ease: 'easeInOut' }}
+                >
+                  #{trip.truckId}
+                </motion.text>
+              </React.Fragment>
+            );
+          })}
         </svg>
       </div>
 
