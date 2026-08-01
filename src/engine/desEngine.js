@@ -5,6 +5,21 @@
    module boundary (plain exports instead of a <script> global) changed.
    ========================================================================= */
 
+/** In-workshop travel time (minutes, one-way) a truck spends physically
+ *  moving between the entry gate and its assigned bay, and between its bay
+ *  and the exit gate — i.e., the walking/driving overhead the spatial
+ *  floor-plan view animates. This is a PLACEHOLDER assumption: the case
+ *  materials available define arrival rates and service times (Exhibit 5)
+ *  but no bay-to-bay transit distance/time figure, so these are reasonable
+ *  estimates (a truck maneuvering into or out of a bay), not a value
+ *  sourced from the case. Swap in the real figure here once available —
+ *  this is the only place it's used. It only extends each truck's own
+ *  recorded `departureTime` (and therefore avgSystem / time-in-system);
+ *  it deliberately does NOT change bay/worker busy windows, so every
+ *  previously-audited utilization, wait-time, and throughput invariant is
+ *  unaffected. */
+export const TRAVEL_TIME_MIN = { in: 3, out: 2 };
+
 export const DEPT_KEYS = ['mech', 'dent', 'bal', 'elec', 'weld', 'tire'];
 export const DEPT_NAMES = { mech: 'Mechanical', dent: 'Denting', bal: 'Balancer', elec: 'Electrician', weld: 'Welder', tire: 'Tire' };
 export const DEFAULT_DEPTS = {
@@ -219,7 +234,11 @@ export function simulate(cfg) {
       const bt = ev.payload.bt;
       bayBusyCount[bt]--;
       for (const dk in truck.job.req) deptBusy[dk] -= truck.job.req[dk];
-      truck.departureTime = t;
+      // Bay/worker release happens exactly on schedule (above) — only the
+      // truck's own recorded departure is pushed out by the round-trip
+      // travel overhead (see TRAVEL_TIME_MIN), since walking/driving out
+      // doesn't keep the bay or its workers occupied.
+      truck.departureTime = t + TRAVEL_TIME_MIN.in + TRAVEL_TIME_MIN.out;
       eventsLog.push({ t, type: 'complete', category: truck.job.category, truckId: truck.id, bay: truck.bay, text: `#${truck.id} ${truck.job.name} completed — Bay ${truck.bay} released` });
       tryStartQueued(t);
       recordSnapshot(t);
