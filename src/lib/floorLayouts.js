@@ -16,9 +16,22 @@
  *
  * Bay footprint is intentionally roomy (BAY_W x BAY_H) — large enough for a
  * full "workstation card" (id, type, status badge, occupant, worker icons)
- * rather than a bare dot, per the industrial-floor-plan visual upgrade. */
+ * rather than a bare dot, per the industrial-floor-plan visual upgrade.
+ *
+ * Zone ranges below are deliberately generous, not just "big enough for the
+ * baseline bay counts": every zone boundary keeps at least ~45px of clear
+ * space from every OTHER zone's bay footprint, even at each zone's range
+ * extreme (where a bay always ends up, regardless of how many bays are
+ * actually configured — `positionsAlongRail` always places the first/last
+ * bay exactly at `range[0]`/`range[1]`). Two zones only ever collide where
+ * one zone's bays vary along one axis while sitting at a fixed position on
+ * the other axis (its "dock" offset) — so the fix is to keep each zone's
+ * fixed dock coordinate far enough from every other zone's range that their
+ * bounding boxes can never overlap, independent of bay count. Verified with
+ * a Node script that checks every zone pair's bounding boxes for n = 1..10
+ * bays (see the floor-plan overlap fix commit). */
 
-export const CANVAS = { width: 1300, height: 980 };
+export const CANVAS = { width: 1700, height: 1150 };
 export const BAY_W = 104;
 export const BAY_H = 70;
 
@@ -54,24 +67,24 @@ export const LAYOUTS = {
     description: 'Standard bays along the entry corridor, turning into the dedicated arm, with inspection just before exit.',
     canvas: CANVAS,
     entry: { x: 40, y: 110 },
-    exit: { x: 1180, y: 760 },
+    exit: { x: 1600, y: 1050 },
     queueHold: { x: 120, y: 165 },
-    drawPath: 'M 40 110 L 1180 110 L 1180 760',
-    corridorPath: [{ x: 40, y: 110 }, { x: 1180, y: 110 }, { x: 1180, y: 760 }],
+    drawPath: 'M 40 110 L 1600 110 L 1600 1050',
+    corridorPath: [{ x: 40, y: 110 }, { x: 1600, y: 110 }, { x: 1600, y: 1050 }],
     // Flow order: Standard (horizontal arm) -> corner -> Dedicated (upper
     // vertical arm) -> Inspection (lower vertical arm, right before exit).
     zones: {
       Bu: {
-        axis: 'x', corridor: 110, dock: 130, range: [220, 1080],
-        entryCorners: [], exitCorners: [{ x: 1180, y: 110 }],
+        axis: 'x', corridor: 110, dock: 150, range: [220, 1300],
+        entryCorners: [], exitCorners: [{ x: 1600, y: 110 }],
       },
       Be: {
-        axis: 'y', corridor: 1180, dock: -130, range: [220, 550],
-        entryCorners: [{ x: 1180, y: 110 }], exitCorners: [],
+        axis: 'y', corridor: 1600, dock: -150, range: [210, 660],
+        entryCorners: [{ x: 1600, y: 110 }], exitCorners: [],
       },
       Bi: {
-        axis: 'y', corridor: 1180, dock: -130, range: [650, 700],
-        entryCorners: [{ x: 1180, y: 110 }], exitCorners: [],
+        axis: 'y', corridor: 1600, dock: -150, range: [800, 980],
+        entryCorners: [{ x: 1600, y: 110 }], exitCorners: [],
       },
     },
   },
@@ -81,30 +94,30 @@ export const LAYOUTS = {
     description: 'Standard bays down one arm, dedicated bays along the base, inspection on the arm leading to exit.',
     canvas: CANVAS,
     entry: { x: 90, y: 60 },
-    exit: { x: 1210, y: 60 },
+    exit: { x: 1610, y: 60 },
     queueHold: { x: 130, y: 130 },
-    drawPath: 'M 90 60 L 170 60 L 170 920 L 1130 920 L 1130 60 L 1210 60',
+    drawPath: 'M 90 60 L 170 60 L 170 1080 L 1530 1080 L 1530 60 L 1610 60',
     corridorPath: [
-      { x: 90, y: 60 }, { x: 170, y: 60 }, { x: 170, y: 920 },
-      { x: 1130, y: 920 }, { x: 1130, y: 60 }, { x: 1210, y: 60 },
+      { x: 90, y: 60 }, { x: 170, y: 60 }, { x: 170, y: 1080 },
+      { x: 1530, y: 1080 }, { x: 1530, y: 60 }, { x: 1610, y: 60 },
     ],
     // Flow order: Standard (left arm) -> Dedicated (base) -> Inspection
     // (right arm, leading up to exit).
     zones: {
       Bu: {
-        axis: 'y', corridor: 170, dock: 130, range: [180, 860],
+        axis: 'y', corridor: 170, dock: 150, range: [180, 950],
         entryCorners: [{ x: 170, y: 60 }],
-        exitCorners: [{ x: 170, y: 920 }, { x: 1130, y: 920 }, { x: 1130, y: 60 }],
+        exitCorners: [{ x: 170, y: 1080 }, { x: 1530, y: 1080 }, { x: 1530, y: 60 }],
       },
       Be: {
-        axis: 'x', corridor: 920, dock: -130, range: [300, 1000],
-        entryCorners: [{ x: 170, y: 60 }, { x: 170, y: 920 }],
-        exitCorners: [{ x: 1130, y: 920 }, { x: 1130, y: 60 }],
+        axis: 'x', corridor: 1080, dock: -150, range: [450, 1050],
+        entryCorners: [{ x: 170, y: 60 }, { x: 170, y: 1080 }],
+        exitCorners: [{ x: 1530, y: 1080 }, { x: 1530, y: 60 }],
       },
       Bi: {
-        axis: 'y', corridor: 1130, dock: -130, range: [180, 860],
-        entryCorners: [{ x: 170, y: 60 }, { x: 170, y: 920 }, { x: 1130, y: 920 }],
-        exitCorners: [{ x: 1130, y: 60 }],
+        axis: 'y', corridor: 1530, dock: -150, range: [180, 950],
+        entryCorners: [{ x: 170, y: 60 }, { x: 170, y: 1080 }, { x: 1530, y: 1080 }],
+        exitCorners: [{ x: 1530, y: 60 }],
       },
     },
   },
