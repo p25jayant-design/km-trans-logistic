@@ -29,6 +29,28 @@ export const BAY_TYPE_LABEL = { Bu: 'Standard', Be: 'Dedicated', Bi: 'Inspection
 
 export const TRUCK_STATE_LABEL = { waiting: 'Waiting', allocated: 'Allocated', service: 'In Service', completed: 'Completed' };
 
+/* Bay-status palette for the industrial floor-plan visualization:
+   Green = Available, Blue = Reserved, Orange = Busy, Red = Waiting for
+   Workers. `available` and `busy` are direct, truthful renderings of the
+   engine's own `bay.status` ('idle'/'busy'). `reserved` is also truthful —
+   the DES allocates a bay the instant a truck's service event fires, which
+   is the exact same instant the floor plan starts that truck's drive-in
+   animation, so a bay is genuinely already allocated-but-not-yet-visually-
+   occupied for the ~1s the truck is animating toward it; that transit
+   window is shown as "reserved" before flipping to "busy" on arrival.
+   `waitingForWorkers` is defined here for completeness but the current
+   engine allocates a bay and its required workers atomically in one step
+   (see desEngine.js's canAllocate/allocate) — a bay can never actually be
+   reserved without its workers also being available, so this state is not
+   currently triggered by the simulation. It's kept in the palette rather
+   than silently dropped so the legend and code stay honest about why. */
+export const BAY_STATUS_COLOR = {
+  available: { hex: '#16a34a', fill: '#dcfce7', stroke: '#86efac', text: 'text-emerald-700', label: 'Available' },
+  reserved: { hex: '#2563eb', fill: '#dbeafe', stroke: '#93c5fd', text: 'text-blue-700', label: 'Reserved' },
+  busy: { hex: '#ea580c', fill: '#ffedd5', stroke: '#fdba74', text: 'text-orange-700', label: 'Busy' },
+  waitingForWorkers: { hex: '#dc2626', fill: '#fee2e2', stroke: '#fca5a5', text: 'text-red-700', label: 'Waiting for Workers' },
+};
+
 export function utilTone(pct) {
   if (pct >= 0.85) return 'red';
   if (pct >= 0.6) return 'amber';

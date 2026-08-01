@@ -58,6 +58,12 @@ export function buildFrame(result, t) {
       const iv = activeIntervalAt(slot.intervals, t);
       if (iv) {
         const total = iv.end - iv.start;
+        // Purely read-only lookup of the occupying truck's already-computed
+        // job.req (department -> worker-count map) — used to show worker
+        // icons inside occupied bays. This does not add any new simulation
+        // state: `truck.job.req` already exists on every truck the engine
+        // produced, this just surfaces it in the per-tick bay view model.
+        const truck = result.trucks.find(tr => tr.id === iv.truckId);
         bays[type].push({
           id: slot.id,
           type,
@@ -70,6 +76,7 @@ export function buildFrame(result, t) {
           remainingMin: Math.max(0, iv.end - t),
           progress: total > 0 ? Math.min(1, (t - iv.start) / total) : 1,
           justCompleted: iv.end - t <= 0.001 && iv.end - t > -1,
+          req: truck ? truck.job.req : {},
         });
       } else {
         bays[type].push({ id: slot.id, type, typeLabel: BAY_LABELS[type], status: 'idle' });
