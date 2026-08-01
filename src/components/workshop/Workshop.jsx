@@ -146,7 +146,7 @@ export default function Workshop({ result, frame }) {
       <WorkshopOverview result={result} frame={frame} />
 
       <div className="mb-3">
-        <WorkshopFloorPlan frame={frame} shape={floorShape} setShape={setFloorShape} />
+        <WorkshopFloorPlan result={result} frame={frame} shape={floorShape} setShape={setFloorShape} />
       </div>
 
       <LayoutGroup id="workshop-trucks">

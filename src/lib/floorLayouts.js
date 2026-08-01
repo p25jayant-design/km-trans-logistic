@@ -44,23 +44,25 @@ export const LAYOUTS = {
   L: {
     id: 'L',
     label: 'L-Shaped',
-    description: 'Standard bays along the entry corridor, turning into a dedicated long-duration arm.',
+    description: 'Standard bays along the entry corridor, turning into the dedicated arm, with inspection just before exit.',
     canvas: CANVAS,
     entry: { x: 34, y: 70 },
     exit: { x: 860, y: 545 },
     queueHold: { x: 110, y: 108 },
     drawPath: 'M 34 70 L 860 70 L 860 545',
+    // Flow order: Standard (horizontal arm) -> corner -> Dedicated (upper
+    // vertical arm) -> Inspection (lower vertical arm, right before exit).
     zones: {
       Bu: {
         axis: 'x', corridor: 70, dock: 78, range: [170, 780],
         entryCorners: [], exitCorners: [{ x: 860, y: 70 }],
       },
-      Bi: {
-        axis: 'x', corridor: 70, dock: 78, range: [860, 860],
-        entryCorners: [], exitCorners: [],
-      },
       Be: {
-        axis: 'y', corridor: 860, dock: -78, range: [160, 480],
+        axis: 'y', corridor: 860, dock: -78, range: [150, 300],
+        entryCorners: [{ x: 860, y: 70 }], exitCorners: [],
+      },
+      Bi: {
+        axis: 'y', corridor: 860, dock: -78, range: [430, 430],
         entryCorners: [{ x: 860, y: 70 }], exitCorners: [],
       },
     },
@@ -68,24 +70,26 @@ export const LAYOUTS = {
   U: {
     id: 'U',
     label: 'U-Shaped',
-    description: 'Standard and dedicated bays face each other across a shared inspection base, horseshoe-style.',
+    description: 'Standard bays down one arm, dedicated bays along the base, inspection on the arm leading to exit.',
     canvas: CANVAS,
     entry: { x: 66, y: 34 },
     exit: { x: 934, y: 34 },
     queueHold: { x: 100, y: 96 },
     drawPath: 'M 66 34 L 100 34 L 100 500 L 900 500 L 900 34 L 934 34',
+    // Flow order: Standard (left arm) -> Dedicated (base) -> Inspection
+    // (right arm, leading up to exit).
     zones: {
       Bu: {
         axis: 'y', corridor: 100, dock: 78, range: [108, 462],
         entryCorners: [{ x: 100, y: 34 }],
         exitCorners: [{ x: 100, y: 500 }, { x: 900, y: 500 }, { x: 900, y: 34 }],
       },
-      Bi: {
+      Be: {
         axis: 'x', corridor: 500, dock: -80, range: [230, 770],
         entryCorners: [{ x: 100, y: 34 }, { x: 100, y: 500 }],
         exitCorners: [{ x: 900, y: 500 }, { x: 900, y: 34 }],
       },
-      Be: {
+      Bi: {
         axis: 'y', corridor: 900, dock: -78, range: [108, 462],
         entryCorners: [{ x: 100, y: 34 }, { x: 100, y: 500 }, { x: 900, y: 500 }],
         exitCorners: [{ x: 900, y: 34 }],

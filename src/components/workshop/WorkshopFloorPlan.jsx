@@ -3,12 +3,15 @@ import { motion } from 'framer-motion';
 import { DoorOpen, LogOut, Truck } from 'lucide-react';
 import { LAYOUTS, computeZonePositions, pathIntoBay, pathOutOfBay } from '../../lib/floorLayouts.js';
 import { TRUCK_STATE_COLOR } from '../../lib/styleMaps.js';
+import { getTruckDetails } from '../../engine/frameSelectors.js';
+import TruckTooltip from './TruckTooltip.jsx';
 
 const ZONE_META = {
   Bu: { title: 'Standard Bays', fill: '#dbeafe', stroke: '#93c5fd', textColor: '#1e40af' },
-  Bi: { title: 'Inspection', fill: '#d1fae5', stroke: '#6ee7b7', textColor: '#065f46' },
   Be: { title: 'Dedicated (Long-Duration)', fill: '#fed7aa', stroke: '#fdba74', textColor: '#9a3412' },
+  Bi: { title: 'Inspection', fill: '#d1fae5', stroke: '#6ee7b7', textColor: '#065f46' },
 };
+const ZONE_ORDER = ['Bu', 'Be', 'Bi'];
 
 const ENTER_DURATION = 1.1;
 const EXIT_DURATION = 0.9;
@@ -19,20 +22,28 @@ let tripCounter = 0;
 /** Spatial, to-scale rendering of the workshop floor in the selected shape
  *  (L or U — see floorLayouts.js), with bays actually repositioned per
  *  shape and trucks animated moving along that shape's corridor into their
- *  assigned bay and back out on completion. Reads the same `frame` object
- *  the rest of the dashboard already uses — never touches simulation
- *  logic, only visualizes where things already are. */
-export default function WorkshopFloorPlan({ frame, shape, setShape }) {
+ *  assigned bay and back out on completion. Reads the same `frame`/`result`
+ *  objects the rest of the dashboard already uses — never touches
+ *  simulation logic, only visualizes where things already are.
+ *
+ *  Bay markers are `motion.rect`/`motion.text` rather than a `motion.g`
+ *  wrapper: `<g>` has no native SVG `x`/`y` attributes, so Framer Motion
+ *  falls back to animating a CSS transform for it, which doesn't track this
+ *  SVG's `viewBox` scaling reliably and made bays render in the wrong spot.
+ *  `rect`/`text`/`circle` all have real `x`/`y`/`cx`/`cy` attributes, so
+ *  animating those is unambiguous regardless of how the SVG is scaled. */
+export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
   const layout = LAYOUTS[shape] || LAYOUTS.L;
   const prevBaysRef = useRef(null);
   const restingRef = useRef(new Map()); // truckId -> { zoneKey, bay: {id,x,y} }
   const [, forceTick] = useState(0);
   const [travelers, setTravelers] = useState([]);
+  const [hover, setHover] = useState(null); // { truckId, rect }
 
   const zonePositions = useMemo(() => {
-    if (!frame) return { Bu: [], Bi: [], Be: [] };
+    if (!frame) return { Bu: [], Be: [], Bi: [] };
     const out = {};
-    ['Bu', 'Bi', 'Be'].forEach((z) => {
+    ZONE_ORDER.forEach((z) => {
       const ids = frame.bays[z].map((b) => b.id);
       out[z] = computeZonePositions(layout, z, ids);
     });
@@ -46,7 +57,7 @@ export default function WorkshopFloorPlan({ frame, shape, setShape }) {
     const prev = prevBaysRef.current;
     if (prev) {
       const newTravelers = [];
-      ['Bu', 'Bi', 'Be'].forEach((zoneKey) => {
+      ZONE_ORDER.forEach((zoneKey) => {
         frame.bays[zoneKey].forEach((bay) => {
           const prevBay = prev[zoneKey]?.find((b) => b.id === bay.id);
           const wasBusyHere = prevBay && prevBay.status === 'busy' && prevBay.truckId === bay.truckId;
@@ -94,6 +105,9 @@ export default function WorkshopFloorPlan({ frame, shape, setShape }) {
     }
   };
 
+  const showHover = (truckId) => (e) => setHover({ truckId, rect: e.currentTarget.getBoundingClientRect() });
+  const clearHover = () => setHover(null);
+
   if (!frame) return null;
 
   const { width, height } = layout.canvas;
@@ -106,6 +120,8 @@ export default function WorkshopFloorPlan({ frame, shape, setShape }) {
     const live = findPos(r.zoneKey, r.bay.id) || r.bay;
     return { truckId, zoneKey: r.zoneKey, bay: live };
   });
+
+  const hoverDetails = hover && result ? getTruckDetails(result, hover.truckId, frame.t) : null;
 
   return (
     <div className="rounded-lg border border-line bg-surface-soft p-3">
@@ -166,18 +182,18 @@ export default function WorkshopFloorPlan({ frame, shape, setShape }) {
             <text x={layout.exit.x} y={layout.exit.y - 15} textAnchor="middle" fontSize={11} fontWeight={700} fill="#475569">EXIT</text>
           </g>
 
-          {/* Bay markers */}
-          {['Bu', 'Bi', 'Be'].map((zoneKey) => {
+          {/* Bay markers — motion.rect/motion.text use native x/y, so they
+              track the true SVG coordinate space exactly, including during
+              the shape-switch glide animation. */}
+          {ZONE_ORDER.map((zoneKey) => {
             const meta = ZONE_META[zoneKey];
             return zonePositions[zoneKey].map((pos) => {
               const bay = frame.bays[zoneKey].find((b) => b.id === pos.id);
               const busy = bay?.status === 'busy';
+              const rx = pos.x - BAY_W / 2;
+              const ry = pos.y - BAY_H / 2;
               return (
-                <motion.g
-                  key={pos.id}
-                  animate={{ x: pos.x - BAY_W / 2, y: pos.y - BAY_H / 2 }}
-                  transition={{ duration: 0.5, ease: 'easeInOut' }}
-                >
+                <React.Fragment key={pos.id}>
                   <motion.rect
                     width={BAY_W}
                     height={BAY_H}
@@ -185,18 +201,35 @@ export default function WorkshopFloorPlan({ frame, shape, setShape }) {
                     fill={busy ? meta.fill : '#f8fafc'}
                     stroke={busy ? meta.stroke : '#e2e8f0'}
                     strokeWidth={1.5}
+                    animate={{ x: rx, y: ry }}
+                    transition={{ duration: 0.5, ease: 'easeInOut' }}
                   />
-                  <text x={BAY_W / 2} y={12} textAnchor="middle" fontSize={9} fontWeight={700} fill={meta.textColor}>{pos.id}</text>
-                  <text x={BAY_W / 2} y={23} textAnchor="middle" fontSize={7.5} fill={busy ? meta.textColor : '#94a3b8'}>
+                  <motion.text
+                    textAnchor="middle"
+                    fontSize={9}
+                    fontWeight={700}
+                    fill={meta.textColor}
+                    animate={{ x: pos.x, y: ry + 12 }}
+                    transition={{ duration: 0.5, ease: 'easeInOut' }}
+                  >
+                    {pos.id}
+                  </motion.text>
+                  <motion.text
+                    textAnchor="middle"
+                    fontSize={7.5}
+                    fill={busy ? meta.textColor : '#94a3b8'}
+                    animate={{ x: pos.x, y: ry + 23 }}
+                    transition={{ duration: 0.5, ease: 'easeInOut' }}
+                  >
                     {busy ? `#${bay.truckId}` : 'idle'}
-                  </text>
-                </motion.g>
+                  </motion.text>
+                </React.Fragment>
               );
             });
           })}
 
-          {/* Zone labels */}
-          {['Bu', 'Bi', 'Be'].map((zoneKey) => {
+          {/* Zone labels, with bay counts */}
+          {ZONE_ORDER.map((zoneKey) => {
             const positions = zonePositions[zoneKey];
             if (!positions.length) return null;
             const first = positions[0];
@@ -205,7 +238,7 @@ export default function WorkshopFloorPlan({ frame, shape, setShape }) {
             const labelY = zone.axis === 'x' ? (zone.dock > 0 ? first.y + 46 : first.y - 40) : first.y - 22;
             return (
               <text key={`label-${zoneKey}`} x={labelX} y={labelY} fontSize={9.5} fontWeight={700} fill="#94a3b8" textAnchor="middle">
-                {ZONE_META[zoneKey].title.toUpperCase()}
+                {ZONE_META[zoneKey].title.toUpperCase()} ({positions.length})
               </text>
             );
           })}
@@ -219,9 +252,10 @@ export default function WorkshopFloorPlan({ frame, shape, setShape }) {
               r={4.5}
               fill={TRUCK_STATE_COLOR.waiting.hex}
               opacity={0.85}
-            >
-              <title>{`#${tr.id} ${tr.jobName} — waiting`}</title>
-            </circle>
+              className="cursor-pointer"
+              onMouseEnter={showHover(tr.id)}
+              onMouseLeave={clearHover}
+            />
           ))}
           {overflow > 0 && (
             <text x={layout.queueHold.x + 76} y={layout.queueHold.y + 4} fontSize={9} fontWeight={700} fill="#64748b">
@@ -239,9 +273,10 @@ export default function WorkshopFloorPlan({ frame, shape, setShape }) {
               strokeWidth={1.5}
               animate={{ cx: bay.x, cy: bay.y }}
               transition={{ duration: 0.5, ease: 'easeInOut' }}
-            >
-              <title>{`#${truckId} — in service`}</title>
-            </motion.circle>
+              className="cursor-pointer"
+              onMouseEnter={showHover(truckId)}
+              onMouseLeave={clearHover}
+            />
           ))}
 
           {/* Trucks actively traveling the corridor */}
@@ -256,9 +291,10 @@ export default function WorkshopFloorPlan({ frame, shape, setShape }) {
               animate={{ cx: trip.path.map((p) => p.x), cy: trip.path.map((p) => p.y) }}
               transition={{ duration: trip.kind === 'enter' ? ENTER_DURATION : EXIT_DURATION, ease: 'linear' }}
               onAnimationComplete={() => handleTripComplete(trip)}
-            >
-              <title>{`#${trip.truckId} — ${trip.kind === 'enter' ? 'moving to bay' : 'departing'}`}</title>
-            </motion.circle>
+              className="cursor-pointer"
+              onMouseEnter={showHover(trip.truckId)}
+              onMouseLeave={clearHover}
+            />
           ))}
         </svg>
       </div>
@@ -269,7 +305,10 @@ export default function WorkshopFloorPlan({ frame, shape, setShape }) {
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: TRUCK_STATE_COLOR.allocated.hex }} /> Moving to bay</span>
         <span className="flex items-center gap-1"><Truck size={11} className="text-emerald-600" /> In service</span>
         <span className="flex items-center gap-1"><LogOut size={11} className="text-gray-500" /> Exit</span>
+        <span className="text-ink-faint/70">· Hover any truck for details</span>
       </div>
+
+      <TruckTooltip anchorRect={hover?.rect} details={hoverDetails} />
     </div>
   );
 }
