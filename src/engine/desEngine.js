@@ -87,6 +87,17 @@ const STANDARD_POOL_RATE = STANDARD_JOBS.reduce((s, j) => s + j.arrivalPerDay, 0
 const ACCIDENT_BASE_RATE = ACCIDENT_JOB.arrivalPerDay; // 0.22/day, fixed catalog constant
 const ACCIDENT_STANDARD_POOL_RATE = STANDARD_POOL_RATE + ACCIDENT_BASE_RATE; // 29.59/day — total volume for this pool, invariant under cfg.accidentPct
 
+/** Today's *natural*, unconfigured Accident-Repair share of this pool
+ *  (≈0.7435%) — derived from the two catalog constants above rather than a
+ *  hardcoded literal, so it's always exactly consistent with them. This is
+ *  the default `accidentPct` (both here and in useSimulation.js's
+ *  DEFAULT_CONFIG): by Poisson-thinning math, setting `accidentPct` to this
+ *  exact ratio reproduces today's original, pre-feature arrival behavior in
+ *  distribution — i.e., out of the box, nothing about simulation behavior
+ *  actually changes; the config panel just now exposes a knob that was
+ *  previously implicit. */
+export const NATURAL_ACCIDENT_PCT = ACCIDENT_BASE_RATE / ACCIDENT_STANDARD_POOL_RATE;
+
 export function mulberry32(a) {
   return function () {
     a |= 0; a = a + 0x6D2B79F5 | 0;
@@ -241,7 +252,7 @@ export function simulate(cfg) {
   // jobs by their existing relative arrivalPerDay — a second, separate draw
   // from the accident-vs-standard coin flip below, so the two decisions
   // don't share (and don't bias) the same random number.
-  const accidentPct = Math.min(1, Math.max(0, cfg.accidentPct ?? 0.4));
+  const accidentPct = Math.min(1, Math.max(0, cfg.accidentPct ?? NATURAL_ACCIDENT_PCT));
   let standardCumWeight = 0;
   const standardCumWeights = STANDARD_JOBS.map((j) => (standardCumWeight += j.arrivalPerDay));
   function pickStandardJob() {

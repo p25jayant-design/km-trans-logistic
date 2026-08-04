@@ -3,7 +3,7 @@
    view models the UI components need. None of this touches simulation
    logic — it only *reads* the already-computed result. */
 
-import { DEPT_KEYS, DEPT_NAMES, fmtTime } from './desEngine.js';
+import { DEPT_KEYS, DEPT_NAMES, fmtTime, NATURAL_ACCIDENT_PCT } from './desEngine.js';
 
 /** Classifies a truck's already-assigned `job` (unchanged — this never
  *  influences which job a truck gets, it only reads the result) into the
@@ -540,7 +540,7 @@ export function computeCategorySummary(result) {
   const poolArrivals = accidentLive.arrivalsCount + standardLive.arrivalsCount;
 
   return {
-    configuredAccidentRatio: Math.min(1, Math.max(0, result.cfg.accidentPct ?? 0.4)),
+    configuredAccidentRatio: Math.min(1, Math.max(0, result.cfg.accidentPct ?? NATURAL_ACCIDENT_PCT)),
     observedAccidentRatio: poolArrivals > 0 ? accidentLive.arrivalsCount / poolArrivals : 0,
     accidentArrivals: accidentLive.arrivalsCount,
     standardArrivals: standardLive.arrivalsCount,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { simulate, computeUtilSeries, computeFlowTimeSeries, DEFAULT_DEPTS } from '../engine/desEngine.js';
+import { simulate, computeUtilSeries, computeFlowTimeSeries, DEFAULT_DEPTS, NATURAL_ACCIDENT_PCT } from '../engine/desEngine.js';
 import { buildFrame, buildFullKpiSeries, computeDaySummary, computeCategoryFlowTimeSeries } from '../engine/frameSelectors.js';
 
 export const DEFAULT_CONFIG = {
@@ -13,8 +13,11 @@ export const DEFAULT_CONFIG = {
   // Fraction (0-1) of the combined Accident Repair + Standard-job arrival
   // pool that arrives as Accident Repair — see the comment above
   // ACCIDENT_STANDARD_POOL_RATE in desEngine.js for exactly what this does
-  // and doesn't affect. Default = 40%, per spec.
-  accidentPct: 0.4,
+  // and doesn't affect. Defaults to NATURAL_ACCIDENT_PCT (today's original,
+  // unconfigured ratio, ≈0.7435%) so out of the box nothing about baseline
+  // simulation behavior changes — the slider is a knob the user can move
+  // away from this, not a changed starting point.
+  accidentPct: NATURAL_ACCIDENT_PCT,
 };
 
 /** Discrete playback-speed levels, in simulated minutes advanced per real
