@@ -5,6 +5,26 @@
 
 import { DEPT_KEYS, DEPT_NAMES, fmtTime } from './desEngine.js';
 
+/** Classifies a truck's already-assigned `job` (unchanged — this never
+ *  influences which job a truck gets, it only reads the result) into the
+ *  Accident Repair / Standard arrival-mix category used by the new
+ *  Accident-vs-Standard reporting features (Live KPI cards, Flow Time
+ *  Analysis category dropdown, split Throughput/Waiting-Time charts,
+ *  Simulation Summary, CSV/XLSX export). Every truck whose job is the
+ *  single 'accident' job type, or whose job.category is 'standard', is
+ *  covered — see the comment above ACCIDENT_STANDARD_POOL_RATE in
+ *  desEngine.js for exactly why these two groups (and only these two) form
+ *  the pool this feature controls. Every other job type (Medium, Denting,
+ *  Cabin Setting, Engine Overhaul, Inspection) returns null — they're
+ *  outside this feature's scope entirely, not silently folded into
+ *  "Standard". */
+export function deriveArrivalCategory(job) {
+  if (!job) return null;
+  if (job.id === 'accident') return 'accident';
+  if (job.category === 'standard') return 'standard';
+  return null;
+}
+
 export function countLE(sortedArr, t) {
   let lo = 0, hi = sortedArr.length;
   while (lo < hi) {
@@ -186,11 +206,21 @@ export function buildTrends(result, t, windowCount = 24) {
  *  to have fully DEPARTED by t, since "time in system" and "completed"
  *  are only meaningful once departure has actually happened. Mirrors the
  *  same avgWait-vs-avgSystem distinction the final-run KPIs in
- *  desEngine.js's `simulate()` make. */
-export function liveKpis(result, t) {
-  let waitSum = 0, waitN = 0, sysSum = 0, completedN = 0;
+ *  desEngine.js's `simulate()` make.
+ *
+ *  Optional `category` ('accident' | 'standard') restricts every count/sum
+ *  below to trucks whose deriveArrivalCategory(tr.job) matches — used by
+ *  the "Accident Repair Arrivals" / "Standard Job Arrivals" Live KPI cards.
+ *  Omitting it (the default, `null`) reproduces the exact original
+ *  all-trucks behavior this function has always had; the one new field,
+ *  `arrivalsCount`, is purely additive and doesn't change any of the other
+ *  returned values for existing callers. */
+export function liveKpis(result, t, category = null) {
+  let waitSum = 0, waitN = 0, sysSum = 0, completedN = 0, arrivalsCount = 0;
   for (const tr of result.trucks) {
     if (tr.arrivalTime > t) break;
+    if (category && deriveArrivalCategory(tr.job) !== category) continue;
+    arrivalsCount++;
     if (tr.serviceStart != null && tr.serviceStart <= t) {
       waitSum += tr.serviceStart - tr.arrivalTime;
       waitN++;
@@ -207,6 +237,7 @@ export function liveKpis(result, t) {
     avgSystem: n ? sysSum / n : 0,
     throughputPerDay: days > 0 ? n / days : 0,
     completedCount: n,
+    arrivalsCount,
   };
 }
 
@@ -237,15 +268,12 @@ function stdDev(values, avg) {
  *  page instead uses the precomputed, sampled `computeFlowTimeSeries`
  *  running-average series (see desEngine.js) for smooth, cheap-to-render
  *  trend drawing — this function is only for the exact-as-of-now tiles. */
-export function liveFlowStats(result, t, jobId) {
-  const values = [];
-  for (const tr of result.trucks) {
-    if (tr.arrivalTime > t) break; // trucks are created in arrival-time order
-    if (tr.job.id !== jobId) continue;
-    if (tr.departureTime != null && tr.departureTime <= t) {
-      values.push(tr.departureTime - tr.arrivalTime);
-    }
-  }
+/** Shared tail end of liveFlowStats/liveFlowStatsFiltered: turns a plain
+ *  array of flow-time values into n/avg/median/min/max/stdDev. Extracted so
+ *  both functions compute these identically — no risk of the per-job-type
+ *  view and the new per-category view ever disagreeing on how a stat is
+ *  defined. */
+function computeStatsFromValues(values) {
   const n = values.length;
   if (n === 0) return { n: 0, avg: 0, median: 0, min: 0, max: 0, stdDev: 0 };
   values.sort((a, b) => a - b);
@@ -253,6 +281,28 @@ export function liveFlowStats(result, t, jobId) {
   const avg = sum / n;
   const median = n % 2 === 1 ? values[(n - 1) / 2] : (values[n / 2 - 1] + values[n / 2]) / 2;
   return { n, avg, median, min: values[0], max: values[n - 1], stdDev: stdDev(values, avg) };
+}
+
+/** Generalized version of liveFlowStats: same exact-as-of-now flow-time
+ *  statistics, but over any predicate on the truck record instead of a
+ *  fixed jobId — used by the Flow Time Analysis page's new "All Jobs" /
+ *  "Accident Repair" / "Standard" category views (liveFlowStats itself
+ *  below is now a thin wrapper over this, so the original per-job-type view
+ *  computes exactly as it always did). */
+export function liveFlowStatsFiltered(result, t, predicate) {
+  const values = [];
+  for (const tr of result.trucks) {
+    if (tr.arrivalTime > t) break; // trucks are created in arrival-time order
+    if (!predicate(tr)) continue;
+    if (tr.departureTime != null && tr.departureTime <= t) {
+      values.push(tr.departureTime - tr.arrivalTime);
+    }
+  }
+  return computeStatsFromValues(values);
+}
+
+export function liveFlowStats(result, t, jobId) {
+  return liveFlowStatsFiltered(result, t, (tr) => tr.job.id === jobId);
 }
 
 /** Summary statistics for one completed simulated day — dayIndex 0 covers
@@ -405,10 +455,15 @@ export function buildFullKpiSeries(result, numPoints = 120) {
 /** Rolling "average waiting time observed so far, as of each sample time"
  *  series — used by the Average Waiting Time chart. Purely derived from the
  *  already-simulated truck records, sampled on the same time grid as
- *  computeUtilSeries so all historical charts share one x-axis. */
-export function computeWaitSeries(result, sampleTimes) {
+ *  computeUtilSeries so all historical charts share one x-axis.
+ *
+ *  Optional `category` ('accident' | 'standard') restricts the series to
+ *  trucks whose deriveArrivalCategory(tr.job) matches — used to split the
+ *  Waiting Time chart into two series. Omitting it (default `null`)
+ *  reproduces the exact original combined-series behavior. */
+export function computeWaitSeries(result, sampleTimes, category = null) {
   const started = result.trucks
-    .filter(tr => tr.serviceStart != null)
+    .filter(tr => tr.serviceStart != null && (!category || deriveArrivalCategory(tr.job) === category))
     .map(tr => ({ t: tr.serviceStart, wait: tr.serviceStart - tr.arrivalTime }))
     .sort((a, b) => a.t - b.t);
   const n = started.length;
@@ -420,6 +475,80 @@ export function computeWaitSeries(result, sampleTimes) {
     const cnt = countLE(times, t2);
     return cnt > 0 ? prefix[cnt] / cnt : 0;
   });
+}
+
+/** Arrival-category counterpart to desEngine.js's computeFlowTimeSeries —
+ *  same precompute-once, sample-and-binary-search shape, same "flow time =
+ *  time in system" definition, same sampleTimes grid formula (so passing
+ *  the same numPoints as computeFlowTimeSeries produces an identical
+ *  sampleTimes array), but grouped by 'all' / 'accident' / 'standard'
+ *  instead of by individual job id — powers the Flow Time Analysis page's
+ *  new category dropdown options and their charts. Lives here rather than
+ *  in desEngine.js so that file's diff stays limited to the one arrival-mix
+ *  change this feature actually requires. */
+export function computeCategoryFlowTimeSeries(result, numPoints) {
+  const total = result.totalDuration || 1;
+  const sampleTimes = [];
+  for (let i = 0; i <= numPoints; i++) sampleTimes.push(total * i / numPoints);
+
+  const GROUPS = {
+    all: () => true,
+    accident: (tr) => deriveArrivalCategory(tr.job) === 'accident',
+    standard: (tr) => deriveArrivalCategory(tr.job) === 'standard',
+  };
+
+  const byCategory = {};
+  Object.entries(GROUPS).forEach(([key, predicate]) => {
+    const departed = result.trucks
+      .filter((tr) => predicate(tr) && tr.departureTime != null)
+      .map((tr) => ({ t: tr.departureTime, flow: tr.departureTime - tr.arrivalTime }))
+      .sort((a, b) => a.t - b.t);
+    const n = departed.length;
+    const prefix = new Array(n + 1).fill(0);
+    for (let i = 0; i < n; i++) prefix[i + 1] = prefix[i] + departed[i].flow;
+
+    const series = sampleTimes.map((t2) => {
+      if (n === 0 || t2 <= 0) return null;
+      let lo = 0, hi = n - 1, ans = -1;
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (departed[mid].t <= t2) { ans = mid; lo = mid + 1; } else hi = mid - 1; }
+      if (ans < 0) return null;
+      const count = ans + 1;
+      return prefix[count] / count;
+    });
+    byCategory[key] = { series, totalCompleted: n };
+  });
+
+  return { sampleTimes, byCategory };
+}
+
+/** Full-run (not "so far") totals comparing Accident Repair vs. Standard —
+ *  powers the Simulation Summary panel. Computed once over the entire
+ *  precomputed result (using result.totalDuration as the cutoff — every
+ *  arrival/departure that will ever happen in this run has already
+ *  happened by then), not tied to live playback position, since "at the
+ *  end of the simulation" describes the whole run's outcome, not a moment
+ *  the user has to scrub to. `observedAccidentRatio` is arrivals-based
+ *  (accident arrivals ÷ total pool arrivals) to directly compare against
+ *  `result.cfg.accidentPct`, the configured split of that same arrival
+ *  pool. */
+export function computeCategorySummary(result) {
+  const t = result.totalDuration;
+  const accidentLive = liveKpis(result, t, 'accident');
+  const standardLive = liveKpis(result, t, 'standard');
+  const accidentFlow = liveFlowStatsFiltered(result, t, (tr) => deriveArrivalCategory(tr.job) === 'accident');
+  const standardFlow = liveFlowStatsFiltered(result, t, (tr) => deriveArrivalCategory(tr.job) === 'standard');
+  const poolArrivals = accidentLive.arrivalsCount + standardLive.arrivalsCount;
+
+  return {
+    configuredAccidentRatio: Math.min(1, Math.max(0, result.cfg.accidentPct ?? 0.4)),
+    observedAccidentRatio: poolArrivals > 0 ? accidentLive.arrivalsCount / poolArrivals : 0,
+    accidentArrivals: accidentLive.arrivalsCount,
+    standardArrivals: standardLive.arrivalsCount,
+    accidentCompletions: accidentLive.completedCount,
+    standardCompletions: standardLive.completedCount,
+    accidentAvgFlowTime: accidentFlow.avg,
+    standardAvgFlowTime: standardFlow.avg,
+  };
 }
 
 /** Read-only detail lookup for a single truck, by id, as of time `t` — feeds

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { simulate, computeUtilSeries, computeFlowTimeSeries, DEFAULT_DEPTS } from '../engine/desEngine.js';
-import { buildFrame, buildFullKpiSeries, computeDaySummary } from '../engine/frameSelectors.js';
+import { buildFrame, buildFullKpiSeries, computeDaySummary, computeCategoryFlowTimeSeries } from '../engine/frameSelectors.js';
 
 export const DEFAULT_CONFIG = {
   horizonDays: 30,
@@ -10,6 +10,11 @@ export const DEFAULT_CONFIG = {
   policy: 'hybrid',
   fixedSeed: true,
   seed: 42,
+  // Fraction (0-1) of the combined Accident Repair + Standard-job arrival
+  // pool that arrives as Accident Repair — see the comment above
+  // ACCIDENT_STANDARD_POOL_RATE in desEngine.js for exactly what this does
+  // and doesn't affect. Default = 40%, per spec.
+  accidentPct: 0.4,
 };
 
 /** Discrete playback-speed levels, in simulated minutes advanced per real
@@ -78,6 +83,10 @@ export function useSimulation() {
     r.util = computeUtilSeries(r, 150);
     r.kpiSeries = buildFullKpiSeries(r, 120);
     r.flow = computeFlowTimeSeries(r, 150);
+    // Same sampleTimes grid (numPoints=150) as r.flow above, grouped by
+    // Accident Repair / Standard / All Jobs instead of by individual job
+    // type — powers the Flow Time Analysis page's new category dropdown.
+    r.flowByCategory = computeCategoryFlowTimeSeries(r, 150);
     setResult(r);
     tRef.current = 0;
     setT(0);

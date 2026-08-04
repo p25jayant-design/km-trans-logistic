@@ -55,6 +55,38 @@ export const JOB_TYPES = [
   { id: 'inspection', name: 'Vehicle Inspection', category: 'inspection', arrivalPerDay: 3.0, baseService: 20, bayType: 'Bi', req: { mech: 1 } },
 ];
 
+/** Accident Repair vs. Standard arrival-mix configuration (cfg.accidentPct).
+ *
+ *  What this changes: today, Accident Repair (`id === 'accident'`) and each
+ *  of the 10 Standard-category jobs are seeded as 11 fully independent
+ *  Poisson arrival streams, each at its own fixed `arrivalPerDay`. This
+ *  feature replaces *only those 11 streams* with one combined stream of the
+ *  exact same total rate (STANDARD_POOL_RATE + ACCIDENT_BASE_RATE — the sum
+ *  never changes), which is then split, per arrival, into Accident vs.
+ *  Standard by an independent coin flip against `cfg.accidentPct`, and — if
+ *  Standard — further split among the 10 standard jobs using their existing
+ *  relative `arrivalPerDay` weights. This is mathematically exact, not an
+ *  approximation: splitting ("thinning") a Poisson process of rate R by a
+ *  fixed probability p reproduces two independent Poisson processes at
+ *  rates p·R and (1−p)·R — so setting `accidentPct` to today's *natural*
+ *  ratio (ACCIDENT_BASE_RATE / ACCIDENT_STANDARD_POOL_RATE) reproduces
+ *  today's exact behavior in distribution. See verify-accident-pool.mjs
+ *  (run during development, not shipped) for the numerical confirmation of
+ *  this.
+ *
+ *  What this does NOT change: every other job type (medium, Denting/Cabin
+ *  Setting/Engine Overhaul, Inspection) keeps its own untouched independent
+ *  stream at its own untouched rate. Once a truck's `job` is chosen —
+ *  whether from this combined pool or from an untouched independent stream
+ *  — every single line that follows (vehicle-type draw, service-time
+ *  formula, bay/department routing, queueing, allocation, event logging) is
+ *  the exact same code, completely unaware this feature exists. */
+const STANDARD_JOBS = JOB_TYPES.filter((j) => j.category === 'standard');
+const ACCIDENT_JOB = JOB_TYPES.find((j) => j.id === 'accident');
+const STANDARD_POOL_RATE = STANDARD_JOBS.reduce((s, j) => s + j.arrivalPerDay, 0); // 29.37/day, fixed catalog constant
+const ACCIDENT_BASE_RATE = ACCIDENT_JOB.arrivalPerDay; // 0.22/day, fixed catalog constant
+const ACCIDENT_STANDARD_POOL_RATE = STANDARD_POOL_RATE + ACCIDENT_BASE_RATE; // 29.59/day — total volume for this pool, invariant under cfg.accidentPct
+
 export function mulberry32(a) {
   return function () {
     a |= 0; a = a + 0x6D2B79F5 | 0;
@@ -202,10 +234,34 @@ export function simulate(cfg) {
     }
   }
 
+  // Accident Repair / Standard arrival mix — see the comment above
+  // ACCIDENT_STANDARD_POOL_RATE for the full explanation. `accidentPct` is
+  // read here (once) and clamped defensively; `pickStandardJob()` draws a
+  // fresh, independent uniform() to weighted-pick among the 10 standard
+  // jobs by their existing relative arrivalPerDay — a second, separate draw
+  // from the accident-vs-standard coin flip below, so the two decisions
+  // don't share (and don't bias) the same random number.
+  const accidentPct = Math.min(1, Math.max(0, cfg.accidentPct ?? 0.4));
+  let standardCumWeight = 0;
+  const standardCumWeights = STANDARD_JOBS.map((j) => (standardCumWeight += j.arrivalPerDay));
+  function pickStandardJob() {
+    const u = uniform() * STANDARD_POOL_RATE;
+    for (let i = 0; i < STANDARD_JOBS.length; i++) {
+      if (u <= standardCumWeights[i]) return STANDARD_JOBS[i];
+    }
+    return STANDARD_JOBS[STANDARD_JOBS.length - 1];
+  }
+
   JOB_TYPES.forEach(job => {
+    // Accident Repair and every Standard-category job are seeded from the
+    // single combined pool event below instead of their own individual
+    // stream — everything else keeps its own untouched independent stream.
+    if (job.id === 'accident' || job.category === 'standard') return;
     const rate = job.arrivalPerDay / 1440;
     if (rate > 0) FEL.push({ time: exponential(rate), type: 'arrival', payload: { jobId: job.id } });
   });
+  const poolRatePerMin = ACCIDENT_STANDARD_POOL_RATE / 1440;
+  if (poolRatePerMin > 0) FEL.push({ time: exponential(poolRatePerMin), type: 'arrival', payload: { pool: true } });
 
   const SAFETY_LIMIT = 400000;
   let guard = 0;
@@ -214,8 +270,20 @@ export function simulate(cfg) {
     const ev = FEL.pop();
     const t = ev.time;
     if (ev.type === 'arrival') {
-      const job = JOB_TYPES.find(j => j.id === ev.payload.jobId);
-      const rate = job.arrivalPerDay / 1440;
+      // Every arrival from the combined pool is classified Accident Repair
+      // vs. Standard right here — the ONLY place this feature touches
+      // arrival generation. Once `job` is resolved (whichever branch), every
+      // line below is byte-for-byte the same code any other arrival has
+      // always used: same vehicle-type draw, same triangular service-time
+      // formula keyed off job.category, same routing/allocation/queueing.
+      let job, rate;
+      if (ev.payload.pool) {
+        job = uniform() < accidentPct ? ACCIDENT_JOB : pickStandardJob();
+        rate = poolRatePerMin;
+      } else {
+        job = JOB_TYPES.find(j => j.id === ev.payload.jobId);
+        rate = job.arrivalPerDay / 1440;
+      }
       if (t <= horizonMinutes) {
         const vehicleType = uniform() < cfg.carCarrierPct ? 'Car Carrier' : 'Flatbed Carrier';
         let base;
@@ -253,7 +321,9 @@ export function simulate(cfg) {
         }
         recordSnapshot(t);
       }
-      if (t <= horizonMinutes) FEL.push({ time: t + exponential(rate), type: 'arrival', payload: { jobId: job.id } });
+      if (t <= horizonMinutes) {
+        FEL.push({ time: t + exponential(rate), type: 'arrival', payload: ev.payload.pool ? { pool: true } : { jobId: job.id } });
+      }
     } else if (ev.type === 'completion') {
       const truck = trucks.find(x => x.id === ev.payload.truckId);
       const bt = ev.payload.bt;

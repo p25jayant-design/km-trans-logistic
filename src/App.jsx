@@ -7,6 +7,7 @@ import { exportSimulationXlsx } from './lib/exportXlsx.js';
 import Navbar from './components/Navbar.jsx';
 import HelpGuide from './components/HelpGuide.jsx';
 import DayCompleteOverlay from './components/DayCompleteOverlay.jsx';
+import SimulationSummary from './components/SimulationSummary.jsx';
 import ConfigPanel from './components/ConfigPanel.jsx';
 import Workshop from './components/workshop/Workshop.jsx';
 import WorkerPanel from './components/workers/WorkerPanel.jsx';
@@ -149,6 +150,7 @@ export default function App() {
               <div className="flex min-w-0 w-full flex-col gap-4 lg:w-[360px] lg:min-w-[300px] lg:shrink-0">
                 <KPIGrid result={result} frame={frame} />
                 <ChartsPanel result={result} frame={frame} />
+                <SimulationSummary result={result} />
               </div>
             </div>
 

@@ -98,6 +98,28 @@ export const KPI_DEFINITIONS = [
     importance:
       'This is the number a customer actually experiences: total time at the shop, start to finish. It’s the right figure to hold against any turnaround-time target, rather than waiting time alone, since a truck that skips the queue but sits through a very long repair still had a long visit.',
   },
+  {
+    id: 'accidentArrivals',
+    label: 'Accident Repair Arrivals',
+    short: 'Number of arrived trucks classified as Accident Repair, out of the combined Accident + Standard arrival pool.',
+    formula: 'count of arrived trucks with arrival category = Accident Repair, ÷ (Accident + Standard arrivals) for the % shown',
+    units: 'trucks (count), plus a % of the Accident+Standard pool',
+    interpretation:
+      'Each arriving truck in this pool is independently classified Accident Repair or Standard using the configured Accident Repair Arrival Percentage. Over enough arrivals, this share converges toward that configured percentage — the Simulation Summary panel shows both side by side as Configured vs. Observed ratio.',
+    importance:
+      'Accident Repair jobs are far heavier than routine Standard jobs (multiple departments, much longer service time), so this count is the leading indicator of how much of that heavy workload the shop is actually absorbing right now — a rising share here, more than any other single number, predicts rising queue length and waiting time shortly after.',
+  },
+  {
+    id: 'standardArrivals',
+    label: 'Standard Job Arrivals',
+    short: 'Number of arrived trucks classified as Standard, out of the combined Accident + Standard arrival pool.',
+    formula: 'count of arrived trucks with arrival category = Standard, ÷ (Accident + Standard arrivals) for the % shown',
+    units: 'trucks (count), plus a % of the Accident+Standard pool',
+    interpretation:
+      'The complement of Accident Repair Arrivals within the same pool — the two percentages always sum to 100%. A Standard job is quick, routine maintenance (oil change, tires, wiring, and similar), so a high Standard share generally means the shop is processing a lighter, faster-moving mix of work.',
+    importance:
+      'Comparing this against Accident Repair Arrivals is the quickest read on today’s workload mix — the same total number of arriving trucks can mean a calm day or an overloaded one, entirely depending on this split, since Accident Repair jobs consume vastly more bay-time and worker-time per truck.',
+  },
 ];
 
 export const KPI_DEFINITIONS_BY_ID = Object.fromEntries(KPI_DEFINITIONS.map((d) => [d.id, d]));

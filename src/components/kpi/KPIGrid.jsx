@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { Clock3, ListOrdered, TrendingUp, Wrench, CircleSlash, Users, CheckCircle, Timer, BarChart3 } from 'lucide-react';
+import { Clock3, ListOrdered, TrendingUp, Wrench, CircleSlash, Users, CheckCircle, Timer, BarChart3, AlertTriangle, ClipboardCheck } from 'lucide-react';
 import Card from '../ui/Card.jsx';
 import KpiCard from './KpiCard.jsx';
 import KpiExplanations from './KpiExplanations.jsx';
@@ -10,6 +10,12 @@ export default function KPIGrid({ result, frame }) {
   const bucket = frame ? Math.floor(frame.t / 5) : null;
   const trends = useMemo(() => (result && frame ? buildTrends(result, frame.t) : null), [result, bucket]);
   const live = useMemo(() => (result && frame ? liveKpis(result, frame.t) : null), [result, bucket]);
+  // Live, so-far arrival counts for the Accident Repair / Standard split —
+  // same liveKpis selector as `live` above, just restricted to each
+  // arrival category via its optional `category` argument (see
+  // frameSelectors.js). `arrivalsCount` is the field these two cards use.
+  const accidentLive = useMemo(() => (result && frame ? liveKpis(result, frame.t, 'accident') : null), [result, bucket]);
+  const standardLive = useMemo(() => (result && frame ? liveKpis(result, frame.t, 'standard') : null), [result, bucket]);
 
   // "What do these KPIs mean?" panel state, lifted up here so every KpiCard's
   // info-icon click (onInfoClick below) can open the panel and jump straight
@@ -50,6 +56,14 @@ export default function KPIGrid({ result, frame }) {
   const fullTimes = ks ? ks.sampleTimes : [];
   const fullIdleBays = ks ? ks.busyBays.map((b, i) => Math.max(0, (result.cfg.bays.Bu + result.cfg.bays.Be + result.cfg.bays.Bi) - b)) : [];
 
+  // Percentages are relative to each other (Accident + Standard = 100%),
+  // not to the full truck population — every other job type (Medium,
+  // Denting, Cabin Setting, Engine Overhaul, Inspection) is outside this
+  // pool entirely, per deriveArrivalCategory's own doc comment.
+  const poolArrivals = accidentLive.arrivalsCount + standardLive.arrivalsCount;
+  const accidentArrivalPct = poolArrivals ? (accidentLive.arrivalsCount / poolArrivals) * 100 : 0;
+  const standardArrivalPct = poolArrivals ? (standardLive.arrivalsCount / poolArrivals) * 100 : 0;
+
   return (
     <Card title="Live KPIs" icon={BarChart3}>
       <div className="mb-3 grid grid-cols-2 gap-2.5">
@@ -61,6 +75,8 @@ export default function KPIGrid({ result, frame }) {
         <KpiCard id="workerUtil" icon={Users} label="Worker Utilization" value={avgWorkerUtil * 100} decimals={0} suffix="%" trend={trends.deptUtilAvg} times={trends.times} fullSeries={ks?.deptUtilPct} fullTimes={fullTimes} color={KPI_COLORS.workerUtil} onInfoClick={revealDefinition} />
         <KpiCard id="completed" icon={CheckCircle} label="Completed Trucks" value={live.completedCount} trend={trends.bayBusyTotal} times={trends.times} fullSeries={ks?.completedCount} fullTimes={fullTimes} color={KPI_COLORS.completed} onInfoClick={revealDefinition} />
         <KpiCard id="avgSystem" icon={Timer} label="Throughput Time" value={live.avgSystem} suffix=" min" trend={trends.queueLen} times={trends.times} fullSeries={ks?.avgSystem} fullTimes={fullTimes} color={KPI_COLORS.timeInSystem} onInfoClick={revealDefinition} />
+        <KpiCard id="accidentArrivals" icon={AlertTriangle} label="Accident Repair Arrivals" value={accidentLive.arrivalsCount} suffix={` (${accidentArrivalPct.toFixed(0)}%)`} color={KPI_COLORS.accidentArrivals} onInfoClick={revealDefinition} />
+        <KpiCard id="standardArrivals" icon={ClipboardCheck} label="Standard Job Arrivals" value={standardLive.arrivalsCount} suffix={` (${standardArrivalPct.toFixed(0)}%)`} color={KPI_COLORS.standardArrivals} onInfoClick={revealDefinition} />
       </div>
 
       <KpiExplanations

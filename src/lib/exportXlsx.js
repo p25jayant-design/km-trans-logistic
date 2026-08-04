@@ -1,6 +1,9 @@
 import * as XLSX from 'xlsx';
 import { fmtTime, DEPT_NAMES, DEPT_KEYS } from '../engine/desEngine.js';
+import { deriveArrivalCategory } from '../engine/frameSelectors.js';
 import { BAY_TYPE_LABEL } from './styleMaps.js';
+
+const ARRIVAL_CATEGORY_LABEL = { accident: 'Accident Repair', standard: 'Standard' };
 
 /* ==========================================================================
  * Shared helpers
@@ -64,8 +67,9 @@ function buildNotesSheet(extraRows = []) {
     ['Exit Time', "When the truck is recorded as having left the workshop — Service End plus a fixed round-trip in/out travel-time assumption (see the engine's TRAVEL_TIME_MIN constant; it is not a figure sourced from the case)."],
     ['Waiting Time', 'Service Start minus Arrival Time.'],
     ['Service Time', 'Service End minus Service Start.'],
-    ['Throughput Time', 'Service End minus Arrival Time — i.e. Waiting Time + Service Time: how long it took to actually get the job done, not counting the final walk/drive to the exit gate.'],
-    ['Time in System', "Exit Time minus Arrival Time — the full time the truck occupies the workshop, matching the dashboard's ‘Average Time in System’ KPI."],
+    ['Throughput Time (this sheet)', 'Service End minus Arrival Time — i.e. Waiting Time + Service Time: how long it took to actually get the job done, not counting the final walk/drive to the exit gate. NOTE: this is a narrower figure than the live dashboard’s "Throughput Time" KPI card, which is actually the Time in System / Flow Time figure below (it includes exit travel) — the two share a name but not a definition; see Time in System / Flow Time for the one that matches the dashboard KPI.'],
+    ['Time in System / Flow Time', "Exit Time minus Arrival Time — the full time the truck occupies the workshop. This is the figure the live dashboard's \"Throughput Time\" KPI card and the Flow Time Analysis page both show; these two columns are intentionally the same underlying figure under both names."],
+    ['Arrival Category', "‘Accident Repair’ or ‘Standard’ for jobs in that arrival-mix pool (see the Accident Repair Arrival Percentage setting); blank (—) for every other job type (Medium, Denting, Cabin Setting, Engine Overhaul, Inspection), which are outside that pool entirely."],
     ['Penalised', 'TRUE if Time in System exceeds 1,440 minutes (24 simulated hours); blank if the truck has not exited yet (not yet knowable).'],
     ['"(min)" columns', 'Raw simulated minutes since the start of the run — the values every formula in this workbook operates on. The paired non-"(min)" column is the same instant formatted as "Day N · HH:MM" for readability.'],
     ['Formulas', 'Every duration/flag column, and every summary sheet in this workbook, is a live Excel formula referencing the raw data sheet(s) — not a value computed once and pasted in. Edit or filter the raw rows and the formulas recalculate.'],
@@ -89,6 +93,7 @@ const CORE_COLUMNS = [
   { key: 'vehicleType', label: 'Vehicle Type' },
   { key: 'jobType', label: 'Job Type' },
   { key: 'jobCategory', label: 'Job Category' },
+  { key: 'arrivalCategory', label: 'Arrival Category' },
   { key: 'policy', label: 'Scheduling Policy' },
   { key: 'bay', label: 'Assigned Bay' },
   { key: 'workers', label: 'Assigned Workers' },
@@ -106,6 +111,7 @@ const CORE_COLUMNS = [
   { key: 'serviceMin', label: 'Service Time (min)', formula: true },
   { key: 'throughputMin', label: 'Throughput Time (min)', formula: true },
   { key: 'systemMin', label: 'Time in System (min)', formula: true },
+  { key: 'flowMin', label: 'Flow Time (min)', formula: true },
   { key: 'status', label: 'Status' },
   { key: 'penalised', label: 'Penalised', formula: true },
 ];
@@ -124,6 +130,11 @@ function coreRowValues(tr, cfg) {
     vehicleType: tr.vehicleType,
     jobType: tr.job.name,
     jobCategory: tr.job.category,
+    // Accident Repair vs. Standard classification — see
+    // deriveArrivalCategory's own doc comment in frameSelectors.js. Blank
+    // for every other job type (Medium, Denting, Cabin Setting, Engine
+    // Overhaul, Inspection), which are outside this feature's scope.
+    arrivalCategory: ARRIVAL_CATEGORY_LABEL[deriveArrivalCategory(tr.job)] || '—',
     policy: POLICY_LABEL[cfg.policy] || cfg.policy,
     bay: tr.bay || 'Not yet allocated',
     workers: formatWorkers(tr.job.req),
@@ -141,6 +152,7 @@ function coreRowValues(tr, cfg) {
     serviceMin: null,
     throughputMin: null,
     systemMin: null,
+    flowMin: null,
     status: statusOf(tr),
     penalised: null,
   };
@@ -171,6 +183,12 @@ function buildTruckRowSheet(prefixColumns, rows) {
     setFormula(sheet, `${L('throughputMin')}${r}`,
       `IF(OR(${L('serviceEndMin')}${r}="",${L('arrivalMin')}${r}=""),"",${L('serviceEndMin')}${r}-${L('arrivalMin')}${r})`);
     setFormula(sheet, `${L('systemMin')}${r}`,
+      `IF(OR(${L('exitMin')}${r}="",${L('arrivalMin')}${r}=""),"",${L('exitMin')}${r}-${L('arrivalMin')}${r})`);
+    // Flow Time is the same quantity as Time in System (arrival to exit) —
+    // the dashboard's own "flow time" terminology (Flow Time Analysis page)
+    // for the identical figure, duplicated under this column name per the
+    // export spec so both names are directly available without a lookup.
+    setFormula(sheet, `${L('flowMin')}${r}`,
       `IF(OR(${L('exitMin')}${r}="",${L('arrivalMin')}${r}=""),"",${L('exitMin')}${r}-${L('arrivalMin')}${r})`);
     setFormula(sheet, `${L('penalised')}${r}`, `IF(${L('systemMin')}${r}="","",${L('systemMin')}${r}>1440)`);
   }

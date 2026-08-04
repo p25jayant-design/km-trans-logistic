@@ -14,6 +14,13 @@ export const KPI_COLORS = {
   workerUtil: '#7c3aed',
   completed: '#059669',
   timeInSystem: '#2563eb',
+  // Accident Repair vs. Standard arrival-mix feature — red for Accident
+  // (matches the app's existing red-for-danger/bottleneck convention),
+  // green for Standard (matches the existing green-for-routine/available
+  // convention). Shared by the two new Live KPI cards and, via
+  // CHART_LINE_COLORS below, the split Throughput/Waiting-Time charts.
+  accidentArrivals: '#dc2626',
+  standardArrivals: '#16a34a',
 };
 
 export const CHART_LINE_COLORS = {
@@ -23,6 +30,8 @@ export const CHART_LINE_COLORS = {
   bayUtilization: '#2563eb',
   departmentUtilization: '#7c3aed',
   flowTime: '#2563eb',
+  accident: '#dc2626',
+  standard: '#16a34a',
 };
 
 /** Formats a duration given in simulated minutes as a short, human-scale

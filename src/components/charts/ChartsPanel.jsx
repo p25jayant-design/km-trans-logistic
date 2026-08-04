@@ -2,16 +2,75 @@ import React, { useMemo } from 'react';
 import { LineChart } from 'lucide-react';
 import Card from '../ui/Card.jsx';
 import ChartBox from './ChartBox.jsx';
-import { BASE_LINE_OPTIONS, styledDataset, chartTrend } from '../../lib/chartTheme.js';
-import { computeWaitSeries, countLE } from '../../engine/frameSelectors.js';
+import { BASE_LINE_OPTIONS, styledDataset, chartTrend, revealUpTo } from '../../lib/chartTheme.js';
+import { computeWaitSeries, countLE, deriveArrivalCategory } from '../../engine/frameSelectors.js';
 import { CHART_LINE_COLORS } from '../../lib/theme.js';
+
+// Compact top legend, layered onto BASE_LINE_OPTIONS — used only by the two
+// two-series (Accident vs. Standard) charts below, so their lines are
+// distinguishable even before expanding. The single-series Queue Length
+// chart keeps plain BASE_LINE_OPTIONS (no legend needed for one line).
+const DUAL_LINE_OPTIONS = {
+  ...BASE_LINE_OPTIONS,
+  plugins: {
+    ...BASE_LINE_OPTIONS.plugins,
+    legend: {
+      display: true,
+      position: 'top',
+      align: 'end',
+      labels: { color: '#64748b', font: { size: 9.5, weight: '600' }, boxWidth: 8, padding: 6 },
+    },
+  },
+};
+
+/** Builds one dataset for a dual-series chart, same visual recipe as
+ *  styledDataset (gradient fill, current-point highlight) but without the
+ *  filled area stacking oddly when two datasets overlap — fill is turned
+ *  off here so both lines stay individually legible on the same axes. */
+function dualDataset({ series, idx, color, label }) {
+  const data = revealUpTo(series, idx);
+  return {
+    label,
+    data,
+    borderColor: color,
+    backgroundColor: color,
+    fill: false,
+    tension: 0.35,
+    borderWidth: 2,
+    pointRadius: (ctx) => (ctx.dataIndex === idx ? 4 : 0),
+    pointHoverRadius: 5,
+    pointBackgroundColor: color,
+    pointBorderColor: '#ffffff',
+    pointBorderWidth: 2,
+  };
+}
 
 /** Compact "overview" charts shown on the Live Simulation page. The detailed,
  *  single-resource utilization charts (with a bay/department picker) live on
  *  their own dedicated pages — see src/pages/. */
 export default function ChartsPanel({ result, frame }) {
+  // Sorted departure times per arrival category, computed once per result
+  // (not re-filtered on every frame tick) — same countLE-over-a-sorted-array
+  // technique the original combined throughput line already used against
+  // result.departuresSorted, just split into two locally-derived arrays
+  // instead of reading the engine's own combined one. result.departuresSorted
+  // itself is untouched and still used elsewhere (e.g. buildFrame).
+  const categoryDepartures = useMemo(() => {
+    if (!result) return null;
+    const accident = [], standard = [];
+    for (const tr of result.trucks) {
+      if (tr.departureTime == null) continue;
+      const cat = deriveArrivalCategory(tr.job);
+      if (cat === 'accident') accident.push(tr.departureTime);
+      else if (cat === 'standard') standard.push(tr.departureTime);
+    }
+    accident.sort((a, b) => a - b);
+    standard.sort((a, b) => a - b);
+    return { accident, standard };
+  }, [result]);
+
   const data = useMemo(() => {
-    if (!result || !frame) return null;
+    if (!result || !frame || !categoryDepartures) return null;
     const sampleTimes = result.util.sampleTimes;
     const idx = Math.max(0, Math.min(sampleTimes.length - 1, countLE(sampleTimes, frame.t)));
     const labels = sampleTimes.map(t => (t / 1440).toFixed(1));
@@ -23,11 +82,13 @@ export default function ChartsPanel({ result, frame }) {
       return result.snapshots.length ? result.snapshots[ans].queueLen : 0;
     });
 
-    const throughputSeries = sampleTimes.map(t => countLE(result.departuresSorted, t));
-    const waitSeries = computeWaitSeries(result, sampleTimes);
+    const throughputAccidentSeries = sampleTimes.map(t => countLE(categoryDepartures.accident, t));
+    const throughputStandardSeries = sampleTimes.map(t => countLE(categoryDepartures.standard, t));
+    const waitAccidentSeries = computeWaitSeries(result, sampleTimes, 'accident');
+    const waitStandardSeries = computeWaitSeries(result, sampleTimes, 'standard');
 
-    return { labels, idx, queueSeries, throughputSeries, waitSeries };
-  }, [result, frame && Math.floor(frame.t / (result?.totalDuration / 150 || 1))]);
+    return { labels, idx, queueSeries, throughputAccidentSeries, throughputStandardSeries, waitAccidentSeries, waitStandardSeries };
+  }, [result, categoryDepartures, frame && Math.floor(frame.t / (result?.totalDuration / 150 || 1))]);
 
   if (!result || !frame || !data) {
     return (
@@ -42,6 +103,14 @@ export default function ChartsPanel({ result, frame }) {
     datasets: [styledDataset({ series, idx: data.idx, color, label })],
   });
 
+  const mkDualChart = (seriesA, colorA, labelA, seriesB, colorB, labelB) => ({
+    labels: data.labels,
+    datasets: [
+      dualDataset({ series: seriesA, idx: data.idx, color: colorA, label: labelA }),
+      dualDataset({ series: seriesB, idx: data.idx, color: colorB, label: labelB }),
+    ],
+  });
+
   return (
     <Card title="Live Charts" icon={LineChart}>
       <div className="flex flex-col gap-3">
@@ -52,16 +121,20 @@ export default function ChartsPanel({ result, frame }) {
           options={BASE_LINE_OPTIONS}
         />
         <ChartBox
-          title="Throughput vs Time (cumulative completions)"
-          trend={chartTrend(data.throughputSeries, data.idx)}
-          data={mkChart(data.throughputSeries, CHART_LINE_COLORS.throughput, 'Completed trucks')}
-          options={BASE_LINE_OPTIONS}
+          title="Throughput vs Time (cumulative completions) — Accident vs Standard"
+          data={mkDualChart(
+            data.throughputAccidentSeries, CHART_LINE_COLORS.accident, 'Accident Repair',
+            data.throughputStandardSeries, CHART_LINE_COLORS.standard, 'Standard',
+          )}
+          options={DUAL_LINE_OPTIONS}
         />
         <ChartBox
-          title="Average Waiting Time vs Time (min)"
-          trend={chartTrend(data.waitSeries, data.idx)}
-          data={mkChart(data.waitSeries, CHART_LINE_COLORS.waitTime, 'Avg wait (min)')}
-          options={BASE_LINE_OPTIONS}
+          title="Average Waiting Time vs Time (min) — Accident vs Standard"
+          data={mkDualChart(
+            data.waitAccidentSeries, CHART_LINE_COLORS.accident, 'Accident Repair',
+            data.waitStandardSeries, CHART_LINE_COLORS.standard, 'Standard',
+          )}
+          options={DUAL_LINE_OPTIONS}
         />
       </div>
       <p className="mt-2 text-[11px] text-ink-faint">
