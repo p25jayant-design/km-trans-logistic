@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import {
   Wrench, ShieldAlert, Search, Navigation, Truck,
   CheckCircle2, Clock, AlertTriangle, Hammer, Gauge, Zap, Flame, Disc,
+  ZoomIn, ZoomOut, Maximize2,
 } from 'lucide-react';
 import { LAYOUTS, computeZonePositions, pathIntoBay, pathOutOfBay, accessStub, BAY_W, BAY_H } from '../../lib/floorLayouts.js';
 import { TRUCK_STATE_COLOR, BAY_STATUS_COLOR } from '../../lib/styleMaps.js';
@@ -28,6 +29,34 @@ const BOTTLENECK_LABEL_BY_ZONE = { Bu: 'Standard Bays', Be: 'Dedicated Bays', Bi
 const ENTER_DURATION = 1.3;
 const EXIT_DURATION = 1.05;
 const TRUCK_W = 30, TRUCK_H = 17;
+
+/** A gentle "standard" ease curve (accelerate out of a stop, decelerate into
+ *  the next one) used for every traveling-truck position/rotation keyframe
+ *  animation — replaces the flatter default 'easeInOut' timing with a
+ *  slightly more natural-feeling glide. Purely a timing-curve change: the
+ *  underlying keyframe arrays (path positions + headings) that drive the
+ *  animation are untouched. */
+const TRAVEL_EASE = [0.4, 0, 0.2, 1];
+
+/** Minimum floor-plan zoom level at which the traveling-truck ID label is
+ *  drawn above its icon. Below this the labels are hidden so a zoomed-out
+ *  view of the whole floor doesn't get cluttered with dozens of tiny,
+ *  unreadable numbers — zooming back in brings them back. */
+const LABEL_MIN_ZOOM = 0.85;
+const MIN_ZOOM = 0.6;
+const MAX_ZOOM = 2.5;
+const ZOOM_STEP = 0.18;
+
+/** Two colorways for the top-view truck icon — "entering" trucks (still
+ *  allocated/in-transit toward a bay) get the same orange used elsewhere for
+ *  "allocated", "exiting" trucks (heading back out to EXIT) get the same
+ *  gray used for "completed" — matching the existing traveler color coding,
+ *  just applied to a real vehicle silhouette instead of a flat rounded
+ *  rectangle. */
+const TRUCK_ICON_VARIANTS = [
+  { id: 'truckIconEnter', body: '#ea580c', cab: '#9a3412' },
+  { id: 'truckIconExit', body: '#9ca3af', cab: '#6b7280' },
+];
 
 let tripCounter = 0;
 
@@ -130,6 +159,29 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
   const [, forceTick] = useState(0);
   const [travelers, setTravelers] = useState([]);
   const [hover, setHover] = useState(null); // { truckId, rect }
+  const [zoom, setZoom] = useState(1);
+  const svgWrapRef = useRef(null);
+
+  const clampZoom = (z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+  const zoomIn = () => setZoom((z) => clampZoom(z + ZOOM_STEP));
+  const zoomOut = () => setZoom((z) => clampZoom(z - ZOOM_STEP));
+  const zoomReset = () => setZoom(1);
+
+  // Wired up as a native (non-passive) listener rather than React's onWheel
+  // prop — React attaches wheel handlers passively by default (to keep page
+  // scroll performant), which silently ignores preventDefault() and lets the
+  // page scroll along with the zoom. A manual, explicitly non-passive
+  // listener is the standard fix.
+  useEffect(() => {
+    const el = svgWrapRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      setZoom((z) => clampZoom(z + (e.deltaY > 0 ? -1 : 1) * (ZOOM_STEP / 2)));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   const zonePositions = useMemo(() => {
     if (!frame) return { Bu: [], Be: [], Bi: [] };
@@ -210,6 +262,15 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
   const queued = frame.queue.slice(0, 12);
   const overflow = frame.queue.length - queued.length;
 
+  // Zoom is implemented as a centered sub-rectangle of the base viewBox —
+  // shrinking/growing the box the same coordinate system maps into, rather
+  // than a CSS transform on the SVG itself, so every already-positioned
+  // element (bays, corridor, traveling trucks) stays perfectly aligned at
+  // any zoom level with no extra bookkeeping.
+  const vbW = width / zoom, vbH = height / zoom;
+  const viewBox = `${(width - vbW) / 2} ${(height - vbH) / 2} ${vbW} ${vbH}`;
+  const showTruckLabels = zoom >= LABEL_MIN_ZOOM;
+
   // Bays currently the *destination* of an in-flight "enter" trip — these
   // get the "reserved" (blue) treatment and a pulsing highlight ring, since
   // the engine has already allocated them but the truck hasn't visually
@@ -226,30 +287,76 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
     <div className="rounded-lg border border-line bg-surface-soft p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="text-[12px] font-bold uppercase tracking-wide text-ink-soft">Spatial Floor Plan — Digital Twin</div>
-        <div className="flex items-center rounded-full border border-line bg-white p-0.5">
-          {Object.values(LAYOUTS).map((l) => (
-            <button
-              key={l.id}
-              type="button"
-              onClick={() => setShape(l.id)}
-              title={l.description}
-              className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-all duration-150 ${
-                shape === l.id ? 'bg-brand-600 text-white shadow-sm' : 'text-ink-faint hover:text-ink'
-              }`}
-            >
-              {l.label}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-full border border-line bg-white p-0.5">
+            <button type="button" onClick={zoomOut} title="Zoom out" className="rounded-full p-1.5 text-ink-faint transition-colors hover:bg-surface-soft hover:text-ink">
+              <ZoomOut size={13} />
             </button>
-          ))}
+            <span className="min-w-[34px] px-0.5 text-center text-[10.5px] font-semibold tabular-nums text-ink-soft">{Math.round(zoom * 100)}%</span>
+            <button type="button" onClick={zoomIn} title="Zoom in" className="rounded-full p-1.5 text-ink-faint transition-colors hover:bg-surface-soft hover:text-ink">
+              <ZoomIn size={13} />
+            </button>
+            <button type="button" onClick={zoomReset} title="Reset zoom" className="rounded-full p-1.5 text-ink-faint transition-colors hover:bg-surface-soft hover:text-ink">
+              <Maximize2 size={12} />
+            </button>
+          </div>
+          <div className="flex items-center rounded-full border border-line bg-white p-0.5">
+            {Object.values(LAYOUTS).map((l) => (
+              <button
+                key={l.id}
+                type="button"
+                onClick={() => setShape(l.id)}
+                title={l.description}
+                className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-all duration-150 ${
+                  shape === l.id ? 'bg-brand-600 text-white shadow-sm' : 'text-ink-faint hover:text-ink'
+                }`}
+              >
+                {l.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="w-full overflow-hidden rounded-md border border-line bg-white">
-        <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" style={{ maxHeight: 620 }}>
+      <div ref={svgWrapRef} className="w-full overflow-hidden rounded-md border border-line bg-white">
+        <svg viewBox={viewBox} className="h-auto w-full" style={{ maxHeight: 620 }}>
           <defs>
             <pattern id="floorTexture" width={28} height={28} patternUnits="userSpaceOnUse">
               <rect width={28} height={28} fill="#fbfcfe" />
               <circle cx={1} cy={1} r={1} fill="#eef1f6" />
             </pattern>
+            {/* Drop shadow for traveling trucks — a soft, subtle blur offset
+                downward, giving the floating truck icon a sense of hovering
+                just above the floor surface as it moves. */}
+            <filter id="truckShadow" x="-75%" y="-75%" width="250%" height="250%">
+              <feDropShadow dx="0" dy="1.3" stdDeviation="1.1" floodColor="#0f172a" floodOpacity="0.32" />
+            </filter>
+            {/* Top-view truck icon (cargo bed + cab + wheels + windshield),
+                one colorway per travel direction. `patternUnits="objectBoundingBox"`
+                ties the tile to whichever shape references it (here, the
+                traveling truck's own motion.rect) at exactly 0..1 of its own
+                width/height, so the icon always covers that rect's full,
+                current on-screen box regardless of where the rect has been
+                translated to — no manual coordinate math needed as it moves. */}
+            {TRUCK_ICON_VARIANTS.map((v) => (
+              <pattern key={v.id} id={v.id} patternUnits="objectBoundingBox" x={0} y={0} width={1} height={1} viewBox={`0 0 ${TRUCK_W} ${TRUCK_H}`} preserveAspectRatio="none">
+                {/* cargo bed / trailer (rear) */}
+                <rect x={1} y={3} width={19} height={11} rx={1.5} fill={v.body} />
+                {/* car-carrier deck rail accents */}
+                <line x1={6} y1={3.5} x2={6} y2={13.5} stroke="rgba(255,255,255,0.32)" strokeWidth={1} />
+                <line x1={13} y1={3.5} x2={13} y2={13.5} stroke="rgba(255,255,255,0.32)" strokeWidth={1} />
+                {/* cab (front — faces heading 0 / east, matching headingFromDelta's convention) */}
+                <rect x={20} y={1.5} width={8.5} height={14} rx={2} fill={v.cab} />
+                <rect x={21} y={2.5} width={4} height={1} rx={0.5} fill="rgba(255,255,255,0.3)" />
+                {/* windshield */}
+                <rect x={25.2} y={3.5} width={2.4} height={10} rx={1} fill="#dbeafe" fillOpacity={0.9} />
+                {/* wheels */}
+                <rect x={5} y={0.6} width={3.5} height={2} rx={0.8} fill="#1f2937" />
+                <rect x={5} y={14.4} width={3.5} height={2} rx={0.8} fill="#1f2937" />
+                <rect x={16} y={0.6} width={3.5} height={2} rx={0.8} fill="#1f2937" />
+                <rect x={16} y={14.4} width={3.5} height={2} rx={0.8} fill="#1f2937" />
+              </pattern>
+            ))}
           </defs>
           {/* Subtle industrial floor texture */}
           <rect x={0} y={0} width={width} height={height} fill="url(#floorTexture)" />
@@ -472,51 +579,56 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
           )}
 
           {/* Trucks actively traveling the corridor — direction-following
-              glyph. `motion.rect` (not foreignObject — see the note above)
-              has native x/y, so its position keyframes track the SVG
+              glyph. `motion.rect` (not foreignObject or `g` — see the note
+              above) has native x/y, so its position keyframes track the SVG
               exactly; `rotate` is a pure CSS rotation with no translation
               mixed in, which Framer computes around the rect's own
               geometric center automatically, so heading and position stay
-              in sync through every corner. */}
+              in sync through every corner. This is unchanged from before —
+              the only difference is the rect's `fill` now references a
+              top-view truck icon pattern (see `<defs>` above) instead of a
+              flat color, so the exact same proven position/rotation
+              mechanism now carries a real vehicle silhouette. */}
           {travelers.map((trip) => {
-            const color = trip.kind === 'enter' ? TRUCK_STATE_COLOR.allocated.hex : TRUCK_STATE_COLOR.completed.hex;
+            const iconId = trip.kind === 'enter' ? 'truckIconEnter' : 'truckIconExit';
             const duration = trip.kind === 'enter' ? ENTER_DURATION : EXIT_DURATION;
             return (
               <React.Fragment key={`trip-${trip.tripId}`}>
                 <motion.rect
                   width={TRUCK_W}
                   height={TRUCK_H}
-                  rx={4}
-                  fill={color}
-                  stroke="#ffffff"
-                  strokeWidth={1.5}
+                  rx={3}
+                  fill={`url(#${iconId})`}
+                  filter="url(#truckShadow)"
                   initial={{ x: trip.path[0].x - TRUCK_W / 2, y: trip.path[0].y - TRUCK_H / 2, rotate: trip.rot[0] }}
                   animate={{
                     x: trip.path.map((p) => p.x - TRUCK_W / 2),
                     y: trip.path.map((p) => p.y - TRUCK_H / 2),
                     rotate: trip.rot,
                   }}
-                  transition={{ duration, ease: 'easeInOut' }}
+                  transition={{ duration, ease: TRAVEL_EASE }}
                   onAnimationComplete={() => handleTripComplete(trip)}
                   className="cursor-pointer"
                   onMouseEnter={showHover(trip.truckId)}
                   onMouseLeave={clearHover}
                 />
-                <motion.text
-                  textAnchor="middle"
-                  fontSize={9}
-                  fontWeight={700}
-                  fill="#334155"
-                  pointerEvents="none"
-                  initial={{ x: trip.path[0].x, y: trip.path[0].y - TRUCK_H / 2 - 6 }}
-                  animate={{
-                    x: trip.path.map((p) => p.x),
-                    y: trip.path.map((p) => p.y - TRUCK_H / 2 - 6),
-                  }}
-                  transition={{ duration, ease: 'easeInOut' }}
-                >
-                  #{trip.truckId}
-                </motion.text>
+                {showTruckLabels && (
+                  <motion.text
+                    textAnchor="middle"
+                    fontSize={9}
+                    fontWeight={700}
+                    fill="#334155"
+                    pointerEvents="none"
+                    initial={{ x: trip.path[0].x, y: trip.path[0].y - TRUCK_H / 2 - 6 }}
+                    animate={{
+                      x: trip.path.map((p) => p.x),
+                      y: trip.path.map((p) => p.y - TRUCK_H / 2 - 6),
+                    }}
+                    transition={{ duration, ease: TRAVEL_EASE }}
+                  >
+                    #{trip.truckId}
+                  </motion.text>
+                )}
               </React.Fragment>
             );
           })}
