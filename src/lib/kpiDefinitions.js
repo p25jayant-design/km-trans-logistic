@@ -89,7 +89,7 @@ export const KPI_DEFINITIONS = [
   },
   {
     id: 'avgSystem',
-    label: 'Avg Time in System',
+    label: 'Throughput Time',
     short: 'Average total time from a truck’s arrival to its departure, for completed trucks.',
     formula: 'mean( departureTime − arrivalTime ), over every truck that has departed so far',
     units: 'minutes',

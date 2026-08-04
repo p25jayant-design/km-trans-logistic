@@ -84,7 +84,7 @@ export const HELP_SECTIONS = [
     title: 'KPI Definitions',
     summary: 'The 8 Live KPI cards, their info tooltips, and the full "What do these KPIs mean?" reference.',
     paragraphs: [
-      'The Live KPIs card shows 8 live-updating numbers: Avg Waiting Time, Queue Length, Throughput/day, Busy Bays, Idle Bays, Worker Utilization, Completed Trucks, and Avg Time in System.',
+      'The Live KPIs card shows 8 live-updating numbers: Avg Waiting Time, Queue Length, Throughput/day, Busy Bays, Idle Bays, Worker Utilization, Completed Trucks, and Throughput Time.',
     ],
     items: [
       { label: 'Info icon (hover)', text: 'Every KPI card has a small info icon — hover it for a short reminder of what the number means.' },
