@@ -210,6 +210,51 @@ export function liveKpis(result, t) {
   };
 }
 
+/** Population standard deviation of a plain numeric array — the values
+ *  passed in (a job type's completed-so-far flow times) are treated as the
+ *  entire currently-observed population, not a sample drawn from a larger
+ *  one, so this divides by n rather than n-1. Shared by liveFlowStats
+ *  below; kept standalone since it's generic and has no simulation-specific
+ *  assumptions baked in. */
+function stdDev(values, avg) {
+  if (values.length === 0) return 0;
+  const variance = values.reduce((s, v) => s + (v - avg) ** 2, 0) / values.length;
+  return Math.sqrt(variance);
+}
+
+/** Live "so-far" flow-time statistics for one job type as of playback time
+ *  t — the Flow Time Analysis page's stat tiles. "Flow time" is
+ *  time-in-system (departureTime - arrivalTime), so — exactly like
+ *  liveKpis' avgSystem above — only trucks that have actually DEPARTED by
+ *  t are included; a truck still queued or in service has a right-censored
+ *  flow time that isn't known yet. Computed fresh from `result.trucks`
+ *  every call (an O(arrived-so-far) scan, same cost class as liveKpis)
+ *  rather than read from a coarse precomputed sample grid, so every number
+ *  here is exact as of the current instant, not interpolated between
+ *  sample points — median/min/max/stdDev have no meaningful "cumulative
+ *  running" analog the way an average does, so there's no lighter-weight
+ *  precomputed series they could be drawn from anyway. The chart on that
+ *  page instead uses the precomputed, sampled `computeFlowTimeSeries`
+ *  running-average series (see desEngine.js) for smooth, cheap-to-render
+ *  trend drawing — this function is only for the exact-as-of-now tiles. */
+export function liveFlowStats(result, t, jobId) {
+  const values = [];
+  for (const tr of result.trucks) {
+    if (tr.arrivalTime > t) break; // trucks are created in arrival-time order
+    if (tr.job.id !== jobId) continue;
+    if (tr.departureTime != null && tr.departureTime <= t) {
+      values.push(tr.departureTime - tr.arrivalTime);
+    }
+  }
+  const n = values.length;
+  if (n === 0) return { n: 0, avg: 0, median: 0, min: 0, max: 0, stdDev: 0 };
+  values.sort((a, b) => a - b);
+  const sum = values.reduce((a, b) => a + b, 0);
+  const avg = sum / n;
+  const median = n % 2 === 1 ? values[(n - 1) / 2] : (values[n / 2 - 1] + values[n / 2]) / 2;
+  return { n, avg, median, min: values[0], max: values[n - 1], stdDev: stdDev(values, avg) };
+}
+
 /** Full-horizon, coarse (day-scale) version of the KPI-card metrics —
  *  computed once per run, sampled at `numPoints` evenly-spaced times from
  *  day 0 through the current run's full duration. This is the "zoomed all

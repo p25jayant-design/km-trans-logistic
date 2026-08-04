@@ -646,3 +646,51 @@ export function computeUtilSeries(result, numPoints) {
 
   return { sampleTimes, baySlotSeries, deptSeries };
 }
+
+/* Precomputes, for every job type, a "running average flow time" series
+   sampled at `numPoints` evenly-spaced times across the run — the same
+   precompute-once-then-index-by-sample-time shape as computeUtilSeries
+   above, so the Flow Time Analysis page's chart can be drawn from a plain
+   array lookup on every animation frame instead of re-scanning every truck
+   each tick. "Flow time" here is time-in-system (departureTime -
+   arrivalTime), matching the engine's own avgSystem KPI and the "Time in
+   System" column in the Excel exports — just broken out per job type
+   instead of averaged across the whole workshop.
+
+   Each sample point's value is the average flow time of every truck of
+   that job type which has *departed* by that sample time (a truck still
+   queued or in service has a right-censored, not-yet-known flow time,
+   exactly like avgSystem excludes them) — computed via a sort + prefix-sum
+   over that job type's departed trucks, so each sample is one binary
+   search instead of a full re-scan (the same technique used throughout
+   this file and frameSelectors.js, e.g. countLE). A sample point before
+   that job type's first-ever completion is `null` (no data yet), which
+   Chart.js renders as a gap rather than a misleading zero. */
+export function computeFlowTimeSeries(result, numPoints) {
+  const total = result.totalDuration || 1;
+  const sampleTimes = [];
+  for (let i = 0; i <= numPoints; i++) sampleTimes.push(total * i / numPoints);
+
+  const byJob = {};
+  JOB_TYPES.forEach(job => {
+    const departed = result.trucks
+      .filter(tr => tr.job.id === job.id && tr.departureTime != null)
+      .map(tr => ({ t: tr.departureTime, flow: tr.departureTime - tr.arrivalTime }))
+      .sort((a, b) => a.t - b.t);
+    const n = departed.length;
+    const prefix = new Array(n + 1).fill(0);
+    for (let i = 0; i < n; i++) prefix[i + 1] = prefix[i] + departed[i].flow;
+
+    const series = sampleTimes.map(t2 => {
+      if (n === 0 || t2 <= 0) return null;
+      let lo = 0, hi = n - 1, ans = -1;
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (departed[mid].t <= t2) { ans = mid; lo = mid + 1; } else hi = mid - 1; }
+      if (ans < 0) return null;
+      const count = ans + 1;
+      return prefix[count] / count;
+    });
+    byJob[job.id] = { series, totalCompleted: n };
+  });
+
+  return { sampleTimes, byJob };
+}
