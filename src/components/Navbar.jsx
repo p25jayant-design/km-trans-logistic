@@ -53,7 +53,7 @@ export default function Navbar({
 
           <div className="flex items-center gap-1.5 rounded-lg border border-line bg-surface-soft px-3 py-1.5 font-mono text-[13px] tabular-nums text-ink">
             <Clock3 size={14} className="text-brand-600" />
-            {clock || 'Day 1 · 00:00'}
+            {clock || '—'}
           </div>
 
           <Badge tone={statusTone} icon={Activity} pulse={status === 'running'}>{statusLabel}</Badge>

@@ -128,6 +128,12 @@ export function simulate(cfg) {
 
   const deptBusy = {}; DEPT_KEYS.forEach(k => deptBusy[k] = 0);
   const bayBusyCount = { Bu: 0, Be: 0, Bi: 0 };
+  // Recorded exactly like `slot.intervals` (pushed at allocate() time, one
+  // entry per truck's actual worker occupancy window) — this is what
+  // deptUtil is computed from below, the same way bayUtil is computed from
+  // `slot.intervals`, instead of re-deriving department busy-time from
+  // whichever trucks happen to be in a `completed` filter at report time.
+  const deptIntervals = {}; DEPT_KEYS.forEach(k => deptIntervals[k] = []);
 
   const horizonMinutes = cfg.horizonDays * 1440;
   const trucks = [];
@@ -158,6 +164,11 @@ export function simulate(cfg) {
     truck.serviceEnd = t + truck.serviceTime;
     slot.busyUntil = truck.serviceEnd;
     slot.intervals.push({ start: t, end: truck.serviceEnd, truckId: truck.id, jobName: truck.job.name, category: truck.job.category, vehicleType: truck.vehicleType });
+    for (const dk in truck.job.req) {
+      deptIntervals[dk].push({ start: t, end: truck.serviceEnd, truckId: truck.id, count: truck.job.req[dk] });
+    }
+    truck.events.push({ type: 'serviceStart', t, bay: slot.id });
+    if (truck.job.category === 'inspection') truck.events.push({ type: 'inspectionStart', t, bay: slot.id });
     FEL.push({ time: truck.serviceEnd, type: 'completion', payload: { truckId: truck.id, bt } });
     eventsLog.push({
       t, type: 'start', category: truck.job.category, truckId: truck.id, bay: slot.id, vehicleType: truck.vehicleType,
@@ -215,14 +226,28 @@ export function simulate(cfg) {
         const serviceTime = base * mult;
         const truck = {
           id: truckIdCounter++, job, vehicleType, arrivalTime: t, serviceTime,
-          queueEntryTime: null, serviceStart: null, serviceEnd: null, departureTime: null, bay: null
+          queueEntryTime: null, serviceStart: null, serviceEnd: null, departureTime: null, bay: null,
+          // Full lifecycle event history — every timestamp this truck's KPIs
+          // are ever derived from gets recorded here as it actually happens,
+          // so avgWait/avgSystem/etc. (and validateSimulation, below) can be
+          // recomputed independently from raw events rather than trusting
+          // any single ad-hoc field. `category === 'inspection'` jobs also
+          // get an aliased 'inspectionStart'/'inspectionEnd' pair at the
+          // exact same instants as 'serviceStart'/'serviceEnd', since in
+          // this model Inspection is a job category served in its own bay
+          // type (Bi), not a separate stage every truck passes through
+          // first — so "the inspection event" for an inspection job *is*
+          // its service window.
+          events: [],
         };
+        truck.events.push({ type: 'arrival', t });
         trucks.push(truck);
         eventsLog.push({ t, type: 'arrival', category: job.category, text: `#${truck.id} ${job.name} arrives (${vehicleType})` });
         const bt = bayTypeForJob(job);
         if (canAllocate(job, bt)) allocate(truck, bt, t);
         else {
           truck.queueEntryTime = t;
+          truck.events.push({ type: 'queued', t });
           queue.push(truck);
           eventsLog.push({ t, type: 'queue', category: job.category, text: `#${truck.id} ${job.name} added to waiting queue` });
         }
@@ -238,21 +263,59 @@ export function simulate(cfg) {
       // truck's own recorded departure is pushed out by the round-trip
       // travel overhead (see TRAVEL_TIME_MIN), since walking/driving out
       // doesn't keep the bay or its workers occupied.
+      truck.events.push({ type: 'serviceEnd', t, bay: truck.bay });
+      if (truck.job.category === 'inspection') truck.events.push({ type: 'inspectionEnd', t, bay: truck.bay });
       truck.departureTime = t + TRAVEL_TIME_MIN.in + TRAVEL_TIME_MIN.out;
+      truck.events.push({ type: 'departure', t: truck.departureTime });
       eventsLog.push({ t, type: 'complete', category: truck.job.category, truckId: truck.id, bay: truck.bay, text: `#${truck.id} ${truck.job.name} completed — Bay ${truck.bay} released` });
       tryStartQueued(t);
       recordSnapshot(t);
     }
   }
 
-  const completed = trucks.filter(x => x.departureTime != null);
-  const waits = completed.map(x => x.serviceStart - x.arrivalTime);
-  const sysTimes = completed.map(x => x.departureTime - x.arrivalTime);
+  // --- KPI computation ------------------------------------------------
+  // Every metric below is derived directly from recorded timestamps
+  // (truck.arrivalTime / serviceStart / serviceEnd / departureTime, or the
+  // `events` array those fields are populated from) or from the recorded
+  // interval lists (`slot.intervals`, `deptIntervals`) — never from a
+  // separately-maintained counter that could drift out of sync. See
+  // `validateSimulation()` below, which independently re-derives queue
+  // length / bay busy count / department busy count from these same raw
+  // truck records and cross-checks them against the incrementally-tracked
+  // `snapshots`, to catch exactly that kind of drift if it ever occurs.
+
+  // Average Waiting Time / delay probability: defined over every truck
+  // that has STARTED service (its wait is a completed, realized quantity
+  // the moment service starts) — deliberately NOT scoped to trucks that
+  // have additionally finished service and departed, since a truck's wait
+  // time has nothing to do with how long its service or exit travel takes.
+  // Using `completed` (departureTime != null) here would happen to produce
+  // the same number in ordinary runs (this engine always drains every
+  // started service to completion before returning — see the FEL loop's
+  // unconditional handling of 'completion' events), but tying the
+  // *meaning* of "wait time" to "and also has left the building" is the
+  // wrong dependency, and would silently under-report if that draining
+  // guarantee were ever violated (e.g. the SAFETY_LIMIT guard tripping).
+  const started = trucks.filter(x => x.serviceStart != null);
+  const waits = started.map(x => x.serviceStart - x.arrivalTime);
   const avgWait = mean(waits);
+  const delayProb = started.length ? waits.filter(w => w > 0.01).length / started.length : 0;
+
+  // Average Time in System: genuinely requires a completed departure — a
+  // truck still queued or still in service has a right-censored (unknown,
+  // not-yet-realized) system time, which is correctly excluded rather than
+  // guessed at.
+  const completed = trucks.filter(x => x.departureTime != null);
+  const sysTimes = completed.map(x => x.departureTime - x.arrivalTime);
   const avgSystem = mean(sysTimes);
-  const delayProb = completed.length ? waits.filter(w => w > 0.01).length / completed.length : 0;
   const throughputPerDay = cfg.horizonDays > 0 ? completed.length / cfg.horizonDays : 0;
 
+  // Bay Utilization: sum of each slot's recorded busy intervals, clipped to
+  // the configured horizon (a job that's still running when the horizon
+  // ends only counts for the portion of its duration that falls within the
+  // horizon — the engine keeps simulating past the horizon just to drain
+  // in-progress jobs to a real completion instead of truncating them, but
+  // that drain tail isn't part of the reported operating period).
   const bayUtil = {};
   const bayUtilBySlot = [];
   ['Bu', 'Be', 'Bi'].forEach(t => {
@@ -268,21 +331,63 @@ export function simulate(cfg) {
     });
     bayUtil[t] = cap > 0 ? busy / cap : 0;
   });
+
+  // Worker (department) Utilization: computed the exact same way as Bay
+  // Utilization — sum of recorded busy intervals (`deptIntervals`, pushed
+  // in `allocate()` alongside `slot.intervals`), clipped to the horizon —
+  // rather than re-deriving busy-minutes by filtering `trucks` down to
+  // whichever ones happen to be in `completed` at report time. Those two
+  // approaches agree in every normal run (every started job does
+  // eventually complete before `simulate()` returns), but computing
+  // straight from the recorded intervals is the more direct, more robust
+  // reading of "what actually happened", and keeps this metric's
+  // methodology symmetric with Bay Utilization's.
   const deptUtil = {};
   DEPT_KEYS.forEach(k => {
-    let busyMin = 0;
-    completed.forEach(x => { if (x.job.req[k]) busyMin += x.job.req[k] * Math.max(0, Math.min(x.serviceEnd, horizonMinutes) - Math.min(x.serviceStart, horizonMinutes)); });
+    let busy = 0;
+    deptIntervals[k].forEach(iv => {
+      const d = Math.max(0, Math.min(iv.end, horizonMinutes) - Math.min(iv.start, horizonMinutes));
+      busy += d * iv.count;
+    });
     const cap = deptAvail[k] * horizonMinutes;
-    deptUtil[k] = cap > 0 ? busyMin / cap : 0;
+    deptUtil[k] = cap > 0 ? busy / cap : 0;
   });
 
+  // Queue-length statistics: `snapshots` records the queue length at every
+  // arrival and completion instant, including the "drain tail" after the
+  // horizon (completions keep firing, and keep calling recordSnapshot,
+  // until every in-progress job actually finishes — see the FEL loop).
+  // maxQueue is unaffected by that tail (queue length can only ever
+  // decrease once arrivals stop, since nothing after the horizon can add
+  // to it), but a time-*average* must not include it, or a single
+  // long-running job still active at the horizon boundary (this case's
+  // "Accident Repair" jobs run up to 12,600 minutes) silently drags the
+  // averaging window out past the reported operating period and dilutes
+  // the result. avgQueue therefore integrates the queue-length step
+  // function over exactly [0, horizonMinutes], not over the full extended
+  // snapshot range.
   let maxQueue = 0; snapshots.forEach(s => { if (s.queueLen > maxQueue) maxQueue = s.queueLen; });
   let avgQueue = 0;
-  for (let i = 1; i < snapshots.length; i++) {
-    avgQueue += snapshots[i - 1].queueLen * (snapshots[i].t - snapshots[i - 1].t);
+  {
+    let prevT = 0, prevLen = 0;
+    for (const s of snapshots) {
+      const segEnd = Math.min(s.t, horizonMinutes);
+      if (segEnd > prevT) avgQueue += prevLen * (segEnd - prevT);
+      prevT = segEnd;
+      prevLen = s.queueLen;
+      if (s.t >= horizonMinutes) break;
+    }
+    if (prevT < horizonMinutes) avgQueue += prevLen * (horizonMinutes - prevT);
   }
+  avgQueue = horizonMinutes > 0 ? avgQueue / horizonMinutes : 0;
+
+  // Full extended timeline (including the post-horizon drain tail) — used
+  // as the x-axis range for the historical/running-utilization charts,
+  // which deliberately DO show that tail (e.g. "queue drains to zero as
+  // the last few jobs wrap up" is accurate, useful information for a time
+  // series, unlike a single averaged KPI number where the same tail would
+  // just dilute the result — see avgQueue above). Not used by any KPI.
   const totalT = snapshots.length ? snapshots[snapshots.length - 1].t : 1;
-  avgQueue = totalT > 0 ? avgQueue / totalT : 0;
 
   const arrivalsSorted = trucks.map(x => x.arrivalTime).sort((a, b) => a - b);
   const departuresSorted = completed.map(x => x.departureTime).sort((a, b) => a - b);
@@ -290,13 +395,208 @@ export function simulate(cfg) {
   const startEvents = eventsLog.filter(e => e.type === 'start');
   const startTimes = startEvents.map(e => e.t);
 
-  return {
-    cfg, trucks, baySlots, snapshots, eventsLog, deptAvail,
+  const result = {
+    cfg, trucks, baySlots, deptIntervals, snapshots, eventsLog, deptAvail,
     arrivalsSorted, departuresSorted, snapTimes, startEvents, startTimes,
     horizonMinutes,
     totalDuration: totalT,
     kpis: { avgWait, avgSystem, delayProb, throughputPerDay, maxQueue, avgQueue, completedCount: completed.length, arrivedCount: trucks.length, bayUtil, bayUtilBySlot, deptUtil }
   };
+  result.validation = validateSimulation(result);
+  if (!result.validation.ok && typeof console !== 'undefined') {
+    // Never silently wrong: any invariant violation is surfaced loudly in
+    // the console (and available to any caller via result.validation) even
+    // though the UI doesn't hard-fail the run on it.
+    console.error('[DES engine] validateSimulation found issues:', result.validation.issues);
+  }
+  return result;
+}
+
+/** Independent, read-only cross-check that everything the UI displays as
+ *  "the simulation state" actually matches what the recorded truck/interval
+ *  data implies — not a second copy of the simulation logic, but a
+ *  from-scratch recomputation of queue length, bay busy count, and
+ *  department busy count from the raw truck timestamps and bay/department
+ *  intervals, compared against the incrementally-tracked `snapshots` the
+ *  engine already produced. If the two ever disagree, it means the
+ *  incremental bookkeeping (bayBusyCount/deptBusy/queue.length, updated
+ *  step-by-step as events are processed) has drifted from what the
+ *  recorded history actually says happened — exactly the class of bug this
+ *  audit was asked to guard against. Also sanity-checks a handful of
+ *  structural and range invariants (no bay double-booked, capacity never
+ *  exceeded, utilizations in [0,1], counts non-negative, etc.). Returns
+ *  `{ ok, issues }` — `issues` is a flat list of human-readable strings;
+ *  never throws, so a validation failure is visible (console.error above,
+ *  and inspectable via `result.validation`) without ever crashing a user's
+ *  simulation run. */
+export function validateSimulation(result) {
+  const issues = [];
+  const EPS = 1e-6;
+  const { cfg, trucks, baySlots, deptIntervals, snapshots, deptAvail, horizonMinutes, kpis } = result;
+
+  // 1. No bay slot ever double-booked: within a single slot, no two
+  //    recorded intervals may overlap.
+  ['Bu', 'Be', 'Bi'].forEach((type) => {
+    baySlots[type].forEach((slot) => {
+      const sorted = slot.intervals.slice().sort((a, b) => a.start - b.start);
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].start < sorted[i - 1].end - EPS) {
+          issues.push(`Bay ${slot.id}: interval [${sorted[i - 1].start},${sorted[i - 1].end}] overlaps [${sorted[i].start},${sorted[i].end}]`);
+        }
+      }
+    });
+  });
+
+  // 2. Every truck's recorded interval duration matches its computed
+  //    service time exactly, and its departure equals serviceEnd plus the
+  //    fixed travel overhead — catches any drift between the fields used
+  //    to report KPIs and the fields used to schedule the simulation.
+  trucks.forEach((tr) => {
+    if (tr.serviceStart != null && tr.serviceEnd != null) {
+      if (Math.abs((tr.serviceEnd - tr.serviceStart) - tr.serviceTime) > EPS) {
+        issues.push(`Truck #${tr.id}: serviceEnd-serviceStart (${tr.serviceEnd - tr.serviceStart}) != serviceTime (${tr.serviceTime})`);
+      }
+    }
+    if (tr.departureTime != null && tr.serviceEnd != null) {
+      const expected = tr.serviceEnd + TRAVEL_TIME_MIN.in + TRAVEL_TIME_MIN.out;
+      if (Math.abs(tr.departureTime - expected) > EPS) {
+        issues.push(`Truck #${tr.id}: departureTime (${tr.departureTime}) != serviceEnd + travel overhead (${expected})`);
+      }
+    }
+    if (tr.serviceStart != null && tr.serviceStart < tr.arrivalTime - EPS) {
+      issues.push(`Truck #${tr.id}: serviceStart (${tr.serviceStart}) before arrivalTime (${tr.arrivalTime})`);
+    }
+  });
+
+  // 3. At every recorded snapshot instant, independently recompute queue
+  //    length, bay busy count (per type), and department busy count (per
+  //    dept) directly from the truck records / intervals, and compare
+  //    against what the snapshot says. This is the core "displayed state
+  //    always matches simulation state" check.
+  //
+  //    Implemented as a sort + sweep (O(n log n)) rather than, for every
+  //    snapshot, filtering the full truck/interval list (O(snapshots *
+  //    trucks)) — with horizons up to 365 days producing 10,000+ trucks and
+  //    a comparable number of snapshots, the naive approach is O(n^2) and
+  //    slow enough to noticeably stall the UI on every run. `activeCountAt`
+  //    below turns each entity into a start/end timestamp pair, sorts each
+  //    list once, and answers "how many were active at time t" with two
+  //    binary searches — the same cumulative-count technique already used
+  //    elsewhere in this codebase (see frameSelectors.js's `countLE`).
+  function countLE(sortedArr, t) {
+    let lo = 0, hi = sortedArr.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (sortedArr[mid] <= t + EPS) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  }
+  /** Builds a fast "count (or, if spans carry a `weight`, total weight) of
+   *  intervals active at time t" function from a list of {start, end,
+   *  weight?} spans — weight defaults to 1 per span, or is the worker
+   *  count for department intervals. Sorts start/end timestamps once
+   *  (O(n log n)) and builds prefix-sum arrays, so each call to the
+   *  returned function is just two binary searches (O(log n)) instead of
+   *  re-scanning every span. "Active at t" matches the same start<=t<end
+   *  condition used everywhere else in this file. */
+  function activeCounter(spans) {
+    const startPairs = spans.map((s) => ({ t: s.start, w: s.weight ?? 1 })).sort((a, b) => a.t - b.t);
+    const endPairs = spans.map((s) => ({ t: s.end, w: s.weight ?? 1 })).sort((a, b) => a.t - b.t);
+    const startTimes = startPairs.map((p) => p.t);
+    const endTimes = endPairs.map((p) => p.t);
+    const startPrefix = new Array(startPairs.length + 1).fill(0);
+    for (let i = 0; i < startPairs.length; i++) startPrefix[i + 1] = startPrefix[i] + startPairs[i].w;
+    const endPrefix = new Array(endPairs.length + 1).fill(0);
+    for (let i = 0; i < endPairs.length; i++) endPrefix[i + 1] = endPrefix[i] + endPairs[i].w;
+    return (t) => startPrefix[countLE(startTimes, t)] - endPrefix[countLE(endTimes, t)];
+  }
+
+  // Queue length: a truck is "in queue" from queueEntryTime (if it was ever
+  // queued) until serviceStart (if it ever got one) — open-ended (still
+  // queued at run's end) spans use horizonMinutes + a large pad as "end" so
+  // they read as still-active at every real snapshot time.
+  const stillQueuedEnd = horizonMinutes + 1e9;
+  const queueSpans = trucks
+    .filter((tr) => tr.queueEntryTime != null)
+    .map((tr) => ({ start: tr.queueEntryTime, end: tr.serviceStart != null ? tr.serviceStart : stillQueuedEnd }));
+  const trueQueueLenAt = activeCounter(queueSpans);
+
+  const trueBayBusyAt = {};
+  ['Bu', 'Be', 'Bi'].forEach((type) => {
+    const spans = [];
+    baySlots[type].forEach((slot) => slot.intervals.forEach((iv) => spans.push({ start: iv.start, end: iv.end })));
+    trueBayBusyAt[type] = activeCounter(spans);
+  });
+
+  const trueDeptBusyAt = {};
+  DEPT_KEYS.forEach((k) => {
+    trueDeptBusyAt[k] = activeCounter(deptIntervals[k].map((iv) => ({ start: iv.start, end: iv.end, weight: iv.count })));
+  });
+
+  let mismatches = 0;
+  const MAX_REPORTED_MISMATCHES = 5;
+  snapshots.forEach((snap) => {
+    const t = snap.t;
+
+    const trueQueueLen = trueQueueLenAt(t);
+    if (trueQueueLen !== snap.queueLen) {
+      mismatches++;
+      if (mismatches <= MAX_REPORTED_MISMATCHES) {
+        issues.push(`t=${t}: snapshot queueLen=${snap.queueLen} but truck-derived queue length=${trueQueueLen}`);
+      }
+    }
+
+    ['Bu', 'Be', 'Bi'].forEach((type) => {
+      const trueBusy = Math.round(trueBayBusyAt[type](t));
+      if (trueBusy !== (snap.bay[type] || 0)) {
+        mismatches++;
+        if (mismatches <= MAX_REPORTED_MISMATCHES) {
+          issues.push(`t=${t}: snapshot bay.${type}=${snap.bay[type]} but interval-derived busy count=${trueBusy}`);
+        }
+      }
+      if (trueBusy > cfg.bays[type] + EPS) {
+        issues.push(`t=${t}: bay type ${type} over capacity — ${trueBusy} busy > ${cfg.bays[type]} configured`);
+      }
+    });
+
+    DEPT_KEYS.forEach((k) => {
+      const trueBusy = Math.round(trueDeptBusyAt[k](t));
+      if (trueBusy !== (snap.dept[k] || 0)) {
+        mismatches++;
+        if (mismatches <= MAX_REPORTED_MISMATCHES) {
+          issues.push(`t=${t}: snapshot dept.${k}=${snap.dept[k]} but interval-derived busy count=${trueBusy}`);
+        }
+      }
+      if (trueBusy > deptAvail[k] + EPS) {
+        issues.push(`t=${t}: department ${k} over capacity — ${trueBusy} busy > ${deptAvail[k]} available`);
+      }
+    });
+  });
+  if (mismatches > MAX_REPORTED_MISMATCHES) {
+    issues.push(`...and ${mismatches - MAX_REPORTED_MISMATCHES} more snapshot mismatch(es) not shown`);
+  }
+
+  // 4. KPI range/consistency sanity checks.
+  if (kpis.avgQueue < -EPS || kpis.avgQueue > kpis.maxQueue + EPS) {
+    issues.push(`avgQueue (${kpis.avgQueue}) out of expected range [0, maxQueue=${kpis.maxQueue}]`);
+  }
+  ['Bu', 'Be', 'Bi'].forEach((type) => {
+    if (kpis.bayUtil[type] < -EPS || kpis.bayUtil[type] > 1 + EPS) {
+      issues.push(`bayUtil.${type} (${kpis.bayUtil[type]}) out of [0,1]`);
+    }
+  });
+  DEPT_KEYS.forEach((k) => {
+    if (kpis.deptUtil[k] < -EPS || kpis.deptUtil[k] > 1 + EPS) {
+      issues.push(`deptUtil.${k} (${kpis.deptUtil[k]}) out of [0,1]`);
+    }
+  });
+  if (kpis.avgWait < -EPS) issues.push(`avgWait (${kpis.avgWait}) is negative`);
+  if (kpis.avgSystem < -EPS) issues.push(`avgSystem (${kpis.avgSystem}) is negative`);
+  if (kpis.completedCount > kpis.arrivedCount) {
+    issues.push(`completedCount (${kpis.completedCount}) exceeds arrivedCount (${kpis.arrivedCount})`);
+  }
+
+  return { ok: issues.length === 0, issues };
 }
 
 /* Precomputes cumulative ("running") utilization series for every bay slot and

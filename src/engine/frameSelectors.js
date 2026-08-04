@@ -165,22 +165,33 @@ export function buildTrends(result, t, windowCount = 24) {
   };
 }
 
-/** "So-far" KPIs computed only from trucks completed up to time t — used by
- *  the live KPI cards, which are deliberately distinct from the full-horizon
- *  final summary shown elsewhere. */
+/** "So-far" KPIs as of live playback time t — deliberately distinct from
+ *  the full-horizon final summary shown elsewhere. Average Waiting Time is
+ *  counted over every truck that has STARTED service by t (a wait time is
+ *  a settled, known quantity the moment service starts — it doesn't
+ *  depend on how long that truck's service or exit travel takes), while
+ *  Average Time in System and throughput/completedCount require a truck
+ *  to have fully DEPARTED by t, since "time in system" and "completed"
+ *  are only meaningful once departure has actually happened. Mirrors the
+ *  same avgWait-vs-avgSystem distinction the final-run KPIs in
+ *  desEngine.js's `simulate()` make. */
 export function liveKpis(result, t) {
-  let waitSum = 0, sysSum = 0, n = 0;
+  let waitSum = 0, waitN = 0, sysSum = 0, completedN = 0;
   for (const tr of result.trucks) {
     if (tr.arrivalTime > t) break;
-    if (tr.departureTime != null && tr.departureTime <= t) {
+    if (tr.serviceStart != null && tr.serviceStart <= t) {
       waitSum += tr.serviceStart - tr.arrivalTime;
+      waitN++;
+    }
+    if (tr.departureTime != null && tr.departureTime <= t) {
       sysSum += tr.departureTime - tr.arrivalTime;
-      n++;
+      completedN++;
     }
   }
+  const n = completedN;
   const days = t / 1440;
   return {
-    avgWait: n ? waitSum / n : 0,
+    avgWait: waitN ? waitSum / waitN : 0,
     avgSystem: n ? sysSum / n : 0,
     throughputPerDay: days > 0 ? n / days : 0,
     completedCount: n,
