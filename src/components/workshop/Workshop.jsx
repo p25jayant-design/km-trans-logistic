@@ -64,7 +64,7 @@ function BaySection({ title, icon: Icon, bays, emptyHint, onInspect, bottleneck 
         )}
       </div>
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
-        {bays.map((bay) => <BayCard key={bay.id} bay={bay} onInspect={onInspect} />)}
+        {bays.map((bay) => <BayCard key={bay.id} bay={bay} onInspect={onInspect} bottleneck={bottleneck} />)}
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import Badge from './ui/Badge.jsx';
 import SimulationControls from './SimulationControls.jsx';
+import { bottleneckColorFor, hexToRgba } from '../lib/styleMaps.js';
 
 export default function Navbar({
   onOpenConfig, clock, status, playing, onPlayPause, onJumpEnd, onReset, onRun,
@@ -12,6 +13,12 @@ export default function Navbar({
 }) {
   const statusTone = status === 'running' ? 'blue' : status === 'complete' ? 'green' : status === 'ready' ? 'amber' : 'neutral';
   const statusLabel = { idle: 'Idle', ready: 'Ready', running: 'Running', complete: 'Complete' }[status] || 'Idle';
+  // Bay-type bottlenecks keep the plain red/amber utilization-threshold
+  // badge exactly as before. A worker-department bottleneck instead gets
+  // that department's own color from the color-coded bottleneck system, so
+  // "Bottleneck: Mechanical Dept" always renders in the same indigo used
+  // for Mechanical everywhere else (floor plan, worker card, legend).
+  const bnColor = bottleneck?.kind === 'dept' ? bottleneckColorFor(bottleneck) : null;
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-surface/95 backdrop-blur px-5 py-3 shadow-sm">
@@ -59,7 +66,11 @@ export default function Navbar({
           <Badge tone={statusTone} icon={Activity} pulse={status === 'running'}>{statusLabel}</Badge>
 
           {bottleneck && (
-            <Badge tone={bottleneck.utilization > 0.85 ? 'red' : 'amber'} icon={AlertTriangle}>
+            <Badge
+              tone={bnColor ? 'neutral' : bottleneck.utilization > 0.85 ? 'red' : 'amber'}
+              icon={AlertTriangle}
+              style={bnColor ? { background: hexToRgba(bnColor.hex, 0.1), color: bnColor.hex, borderColor: hexToRgba(bnColor.hex, 0.4) } : undefined}
+            >
               Bottleneck: {bottleneck.label} {(bottleneck.utilization * 100).toFixed(0)}%
             </Badge>
           )}

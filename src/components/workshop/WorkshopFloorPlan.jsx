@@ -6,9 +6,9 @@ import {
   ZoomIn, ZoomOut, Maximize2,
 } from 'lucide-react';
 import { LAYOUTS, computeZonePositions, pathIntoBay, pathOutOfBay, accessStub, BAY_W, BAY_H } from '../../lib/floorLayouts.js';
-import { TRUCK_STATE_COLOR, BAY_STATUS_COLOR } from '../../lib/styleMaps.js';
+import { TRUCK_STATE_COLOR, BAY_STATUS_COLOR, DEPT_BOTTLENECK_COLOR, BAY_BOTTLENECK_COLOR, hexToRgba } from '../../lib/styleMaps.js';
 import { getTruckDetails } from '../../engine/frameSelectors.js';
-import { DEPT_KEYS } from '../../engine/desEngine.js';
+import { DEPT_KEYS, DEPT_NAMES } from '../../engine/desEngine.js';
 import TruckTooltip from './TruckTooltip.jsx';
 
 /* Section metadata — labels match the industrial-floor-plan spec's wording
@@ -109,6 +109,18 @@ function computeFlowArrows(points, spacing = 130) {
     }
   }
   return arrows;
+}
+
+/** One entry in the "Bottleneck colors" legend — a small colored dot plus
+ *  its label. Purely presentational; `color` is always a hex string from
+ *  either `BAY_BOTTLENECK_COLOR` or `DEPT_BOTTLENECK_COLOR`. */
+function BottleneckSwatch({ color, label }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />
+      {label}
+    </span>
+  );
 }
 
 /** Bounding band behind every bay in a zone — the tinted "service area"
@@ -281,6 +293,15 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
 
   const bottleneckZone = ZONE_ORDER.find((z) => frame.bottleneck?.label === BOTTLENECK_LABEL_BY_ZONE[z]);
 
+  // When the current system bottleneck is a worker department (not a bay
+  // type), individual occupied bays whose job needs that department get
+  // re-colored to the department's own bottleneck color below — see the
+  // workstation-card rendering loop. This is separate from `bottleneckZone`
+  // above (bay-type bottlenecks, which keep their existing red zone-band
+  // highlight untouched) since a department shortage doesn't affect every
+  // bay in a zone, only the ones whose job actually needs that department.
+  const deptBnKey = frame.bottleneck?.kind === 'dept' ? frame.bottleneck.key : null;
+
   const hoverDetails = hover && result ? getTruckDetails(result, hover.truckId, frame.t) : null;
 
   return (
@@ -436,7 +457,14 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
               const busy = bay?.status === 'busy';
               const approaching = approachingKeys.has(`${zoneKey}:${pos.id}`);
               const statusKey = !busy ? 'available' : approaching ? 'reserved' : 'busy';
-              const sc = BAY_STATUS_COLOR[statusKey];
+              // If this bay's active job needs workers from the department
+              // that's currently the system's bottleneck, its card takes on
+              // that department's color instead of the normal busy/orange —
+              // pinpointing exactly which occupied bays are being held up by
+              // the worker shortage (not every bay of that type).
+              const deptBn = busy && deptBnKey && bay.req?.[deptBnKey] > 0;
+              const dc = deptBn ? DEPT_BOTTLENECK_COLOR[deptBnKey] : null;
+              const sc = dc ? { hex: dc.hex, fill: dc.fill, stroke: dc.stroke, label: `${DEPT_NAMES[deptBnKey]} Shortage` } : BAY_STATUS_COLOR[statusKey];
               const stub = accessStub(layout, zoneKey, pos);
               const rx = pos.x - BAY_W / 2, ry = pos.y - BAY_H / 2;
               const workers = busy && bay.req
@@ -463,7 +491,7 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
                     animate={{ x: rx - 6, y: ry - 6, width: BAY_W + 12, height: BAY_H + 12 }}
                     transition={{ duration: 0.5, ease: 'easeInOut' }}
                   />
-                  {/* Reserved / bottleneck pulse ring */}
+                  {/* Reserved pulse ring (bay allocated, truck still in transit) */}
                   {(approaching) && (
                     <motion.rect
                       rx={10}
@@ -471,6 +499,19 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
                       stroke={BAY_STATUS_COLOR.reserved.hex}
                       strokeWidth={2.5}
                       animate={{ x: rx - 4, y: ry - 4, width: BAY_W + 8, height: BAY_H + 8, opacity: [0.85, 0.15, 0.85] }}
+                      transition={{ x: { duration: 0.5 }, y: { duration: 0.5 }, width: { duration: 0.5 }, height: { duration: 0.5 }, opacity: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } }}
+                    />
+                  )}
+                  {/* Worker-department bottleneck pulse ring, in that
+                      department's own color from the color-coded bottleneck
+                      system (see legend below). */}
+                  {deptBn && (
+                    <motion.rect
+                      rx={10}
+                      fill="none"
+                      stroke={dc.hex}
+                      strokeWidth={2.5}
+                      animate={{ x: rx - 4, y: ry - 4, width: BAY_W + 8, height: BAY_H + 8, opacity: [0.9, 0.2, 0.9] }}
                       transition={{ x: { duration: 0.5 }, y: { duration: 0.5 }, width: { duration: 0.5 }, height: { duration: 0.5 }, opacity: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } }}
                     />
                   )}
@@ -643,6 +684,20 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
         <span className="flex items-center gap-1"><CheckCircle2 size={11} className="text-gray-500" /> Completed</span>
         <span className="flex items-center gap-1"><AlertTriangle size={11} className="text-red-500" /> Bottleneck</span>
         <span className="text-ink-faint/70">· Hover any truck for details</span>
+      </div>
+
+      {/* Color-coded bottleneck legend — a bay-type shortage (Standard/
+          Dedicated/Inspection running out of physical bays) always shows in
+          the same red used above; a worker-department shortage instead
+          colors the affected bays and every "Bottleneck" indicator in that
+          department's own unique color, so the *cause* of a slowdown is
+          identifiable at a glance without reading any text. */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-line bg-white px-2.5 py-1.5 text-[10px] text-ink-faint">
+        <span className="font-bold uppercase tracking-wide text-ink-soft">Bottleneck colors</span>
+        <BottleneckSwatch color={BAY_BOTTLENECK_COLOR.hex} label="Bay capacity (any type)" />
+        {DEPT_KEYS.map((k) => (
+          <BottleneckSwatch key={k} color={DEPT_BOTTLENECK_COLOR[k].hex} label={DEPT_NAMES[k]} />
+        ))}
       </div>
 
       <TruckTooltip anchorRect={hover?.rect} details={hoverDetails} />

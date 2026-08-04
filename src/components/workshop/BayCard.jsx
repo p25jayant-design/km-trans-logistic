@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, Users, Wrench } from 'lucide-react';
+import { CheckCircle2, Users, Wrench, AlertTriangle } from 'lucide-react';
 import TruckCard from './TruckCard.jsx';
 import Badge from '../ui/Badge.jsx';
-import { CATEGORY_COLOR } from '../../lib/styleMaps.js';
+import { CATEGORY_COLOR, DEPT_BOTTLENECK_COLOR, hexToRgba } from '../../lib/styleMaps.js';
 import { DEPT_NAMES } from '../../engine/desEngine.js';
 
 /** A single service bay, styled like a real workstation: a dark equipment
@@ -16,8 +16,15 @@ import { DEPT_NAMES } from '../../engine/desEngine.js';
  *  briefly shown "allocated" (orange) before settling into "service"
  *  (green) — a purely presentational cue timed to the truck's slide-in,
  *  since the DES engine itself allocates and starts service in one instant.
- *  Reads only already-derived frame/result data — no simulation logic. */
-export default function BayCard({ bay, onInspect }) {
+ *  Reads only already-derived frame/result data — no simulation logic.
+ *
+ *  When the *current system bottleneck* is a worker department (not a bay
+ *  type) and this specific bay's active job needs workers from that
+ *  department (`bay.req[bottleneck.key] > 0`), the card's border and a
+ *  small badge switch to that department's color from the color-coded
+ *  bottleneck system — flagging precisely which occupied bays are being
+ *  held up by the worker shortage, as opposed to every bay of that type. */
+export default function BayCard({ bay, onInspect, bottleneck }) {
   const [justFinished, setJustFinished] = useState(false);
   const wasBusy = useRef(false);
 
@@ -45,6 +52,14 @@ export default function BayCard({ bay, onInspect }) {
 
   const cat = bay.status === 'busy' ? CATEGORY_COLOR[bay.category] : null;
 
+  // True when the system's current bottleneck is a worker department AND
+  // this bay's active job needs workers from that exact department — i.e.
+  // this bay, specifically, is being held up by the shortage (as opposed to
+  // just sharing a bay *type* with the bottleneck).
+  const deptBnKey = bottleneck?.kind === 'dept' ? bottleneck.key : null;
+  const isDeptBottleneckBay = bay.status === 'busy' && !!deptBnKey && (bay.req?.[deptBnKey] > 0);
+  const bnColor = isDeptBottleneckBay ? (DEPT_BOTTLENECK_COLOR[deptBnKey] || null) : null;
+
   // Same read-only lookup the hover tooltip uses — reused here to surface
   // "Assigned Workers" directly on the bay card, not just on hover.
   const assignedWorkers = useMemo(() => {
@@ -60,8 +75,9 @@ export default function BayCard({ bay, onInspect }) {
   return (
     <motion.div
       layout
+      style={bnColor ? { borderColor: bnColor.hex, boxShadow: `0 0 0 3px ${hexToRgba(bnColor.hex, 0.16)}` } : undefined}
       className={`relative overflow-hidden rounded-lg border shadow-sm transition-colors duration-300 ${
-        bay.status === 'busy' ? `${cat.border} bg-white` : 'border-line bg-surface-soft'
+        bay.status === 'busy' ? `${bnColor ? '' : cat.border} bg-white` : 'border-line bg-surface-soft'
       } ${justFinished ? 'animate-flashGreen' : ''}`}
     >
       {/* equipment nameplate */}
@@ -78,6 +94,15 @@ export default function BayCard({ bay, onInspect }) {
       </div>
 
       <div className="p-2.5">
+        {bnColor && (
+          <div
+            className="mb-2 flex items-center gap-1 rounded-md px-1.5 py-1 text-[9.5px] font-bold"
+            style={{ background: hexToRgba(bnColor.hex, 0.12), color: bnColor.hex, border: `1px solid ${hexToRgba(bnColor.hex, 0.4)}` }}
+            title={`This bay's job needs ${DEPT_NAMES[deptBnKey]} workers, and ${DEPT_NAMES[deptBnKey]} is the current system bottleneck.`}
+          >
+            <AlertTriangle size={10} /> Slowed by {DEPT_NAMES[deptBnKey]} shortage
+          </div>
+        )}
         <div className="mb-2 flex items-center justify-between gap-2">
           <Badge tone={bay.status === 'busy' ? 'green' : 'neutral'} icon={bay.status === 'busy' ? Wrench : undefined}>
             {bay.status === 'busy' ? 'Busy' : 'Available'}

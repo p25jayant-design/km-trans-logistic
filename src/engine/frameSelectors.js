@@ -17,6 +17,14 @@ export function countLE(sortedArr, t) {
 export function snapshotAt(result, t) {
   if (!result.snapshots.length) return { queueLen: 0, dept: {}, bay: {} };
   const times = result.snapTimes;
+  // Before the very first recorded snapshot (e.g. t=0, before any truck has
+  // arrived), there is genuinely nothing happening yet — the binary search
+  // below would otherwise fall through with its `ans = 0` default and
+  // silently return the *first* snapshot's data (which describes some
+  // future moment, once the first job actually starts), making the initial
+  // frame falsely report busy departments/queue/bottleneck. Return the same
+  // "nothing recorded" empty shape used when there are no snapshots at all.
+  if (t < times[0]) return { queueLen: 0, dept: {}, bay: {} };
   let lo = 0, hi = times.length - 1, ans = 0;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
@@ -116,18 +124,22 @@ export function buildFrame(result, t) {
   const arrivedSoFar = countLE(result.arrivalsSorted, t);
   const completedSoFar = countLE(result.departuresSorted, t);
 
+  // `kind`/`key` identify *what* the bottleneck is (a bay type or a worker
+  // department) so the UI can look up the right color from the color-coded
+  // bottleneck system (see lib/styleMaps.js's DEPT_BOTTLENECK_COLOR /
+  // bottleneckColorFor) without fragile string-matching on `label`.
   let bottleneck = null, bnUtil = -1;
   ['Bu', 'Be', 'Bi'].forEach(type => {
     const total = result.cfg.bays[type];
     if (total > 0) {
       const u = (snap.bay[type] || 0) / total;
-      if (u > bnUtil) { bnUtil = u; bottleneck = { label: BAY_LABELS[type] + 's', utilization: u }; }
+      if (u > bnUtil) { bnUtil = u; bottleneck = { kind: 'bay', key: type, label: BAY_LABELS[type] + 's', utilization: u }; }
     }
   });
   departments.forEach(d => {
     if (d.total > 0 && d.utilization > bnUtil) {
       bnUtil = d.utilization;
-      bottleneck = { label: d.name + ' Dept', utilization: d.utilization };
+      bottleneck = { kind: 'dept', key: d.key, label: d.name + ' Dept', utilization: d.utilization };
     }
   });
 
