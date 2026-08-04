@@ -6,6 +6,7 @@ import { countLE } from './engine/frameSelectors.js';
 import { exportSimulationXlsx } from './lib/exportXlsx.js';
 import Navbar from './components/Navbar.jsx';
 import HelpGuide from './components/HelpGuide.jsx';
+import DayCompleteOverlay from './components/DayCompleteOverlay.jsx';
 import ConfigPanel from './components/ConfigPanel.jsx';
 import Workshop from './components/workshop/Workshop.jsx';
 import WorkerPanel from './components/workers/WorkerPanel.jsx';
@@ -51,6 +52,7 @@ export default function App() {
     config, setConfig, result, frame, t,
     playing, speed, setSpeed, status,
     runSimulation, play, pause, reset, jumpToEnd, scrubTo,
+    dayComplete, continueAfterDayComplete,
   } = useSimulation();
 
   const [showConfig, setShowConfig] = useState(false);
@@ -93,6 +95,8 @@ export default function App() {
       />
 
       <BootOverlay open={booting} config={config} onDone={handleBootDone} />
+
+      <DayCompleteOverlay dayComplete={dayComplete} onContinue={continueAfterDayComplete} />
 
       <div className="mx-auto max-w-[1800px] px-4 pt-4">
         <HelpGuide />

@@ -255,6 +255,111 @@ export function liveFlowStats(result, t, jobId) {
   return { n, avg, median, min: values[0], max: values[n - 1], stdDev: stdDev(values, avg) };
 }
 
+/** Summary statistics for one completed simulated day — dayIndex 0 covers
+ *  minutes [0, 1440), dayIndex 1 covers [1440, 2880), and so on. Powers the
+ *  day-completion overlay (useSimulation.js pauses playback right at each
+ *  day boundary and DayCompleteOverlay.jsx renders this for the day that
+ *  just ended). Every figure is derived directly from the engine's own
+ *  recorded interval/truck data, clipped to the day's window with the same
+ *  clip-and-sum technique desEngine.js's own final bayUtil/deptUtil
+ *  calculation uses over the whole horizon (see simulate()'s comments) —
+ *  just re-windowed to a single day instead of [0, horizonMinutes]. */
+export function computeDaySummary(result, dayIndex) {
+  const dayStart = dayIndex * 1440;
+  const dayEnd = Math.min((dayIndex + 1) * 1440, result.totalDuration);
+  const dayLen = Math.max(0, dayEnd - dayStart);
+  const clip = (s, e) => Math.max(0, Math.min(e, dayEnd) - Math.max(s, dayStart));
+
+  // Trucks processed: departed within this day's window. "Processed" means
+  // fully finished and gone — a truck that started service today but
+  // departs tomorrow is counted on the day it actually leaves, matching how
+  // "completed" is defined everywhere else in this app (liveKpis,
+  // liveFlowStats). Waiting time is counted on the day service actually
+  // began, since a wait is a settled quantity the moment service starts
+  // (same reasoning as liveKpis' avgWait).
+  let trucksProcessed = 0;
+  let waitSum = 0, waitN = 0;
+  for (const tr of result.trucks) {
+    if (tr.arrivalTime >= dayEnd) break; // trucks are created in arrival-time order
+    if (tr.departureTime != null && tr.departureTime >= dayStart && tr.departureTime < dayEnd) trucksProcessed++;
+    if (tr.serviceStart != null && tr.serviceStart >= dayStart && tr.serviceStart < dayEnd) {
+      waitSum += tr.serviceStart - tr.arrivalTime;
+      waitN++;
+    }
+  }
+  const avgWaitingTime = waitN ? waitSum / waitN : 0;
+
+  // Bay utilization for the day: recorded busy intervals per bay type,
+  // clipped to the day window, divided by that type's total bay-minutes
+  // available in the day.
+  let bayBusyMin = 0, bayCapMin = 0;
+  ['Bu', 'Be', 'Bi'].forEach((type) => {
+    const count = result.cfg.bays[type];
+    if (count <= 0) return;
+    bayCapMin += count * dayLen;
+    result.baySlots[type].forEach((slot) => {
+      slot.intervals.forEach((iv) => { bayBusyMin += clip(iv.start, iv.end); });
+    });
+  });
+  const bayUtilization = bayCapMin > 0 ? bayBusyMin / bayCapMin : 0;
+
+  // Worker/department utilization for the day, same clip-and-sum technique
+  // applied to deptIntervals (each interval also carries a worker `count`,
+  // since a single job can occupy more than one worker of a department).
+  let deptBusyMin = 0, deptCapMin = 0;
+  const perDept = DEPT_KEYS.map((k) => {
+    const cap = result.deptAvail[k] || 0;
+    let busy = 0;
+    result.deptIntervals[k].forEach((iv) => { busy += clip(iv.start, iv.end) * (iv.count || 1); });
+    deptCapMin += cap * dayLen;
+    deptBusyMin += busy;
+    return { key: k, name: DEPT_NAMES[k], utilization: cap > 0 && dayLen > 0 ? busy / (cap * dayLen) : 0 };
+  });
+  const workerUtilization = deptCapMin > 0 ? deptBusyMin / deptCapMin : 0;
+
+  // Bottleneck of the day: whichever single bay type or department ran the
+  // hottest (highest utilization) *during this specific day* — the same
+  // "highest utilization wins" rule buildFrame() uses for the live
+  // instantaneous bottleneck, applied to a day-long average instead of one
+  // instant. `kind`/`key` match buildFrame()'s bottleneck shape so the UI
+  // can reuse the same bottleneckColorFor() color lookup.
+  let bottleneck = null, bnUtil = -1;
+  ['Bu', 'Be', 'Bi'].forEach((type) => {
+    const count = result.cfg.bays[type];
+    if (count <= 0) return;
+    let busy = 0;
+    result.baySlots[type].forEach((slot) => slot.intervals.forEach((iv) => { busy += clip(iv.start, iv.end); }));
+    const u = dayLen > 0 ? busy / (count * dayLen) : 0;
+    if (u > bnUtil) { bnUtil = u; bottleneck = { kind: 'bay', key: type, label: BAY_LABELS[type] + 's', utilization: u }; }
+  });
+  perDept.forEach((d) => {
+    if (d.utilization > bnUtil) { bnUtil = d.utilization; bottleneck = { kind: 'dept', key: d.key, label: d.name + ' Dept', utilization: d.utilization }; }
+  });
+
+  // Throughput: cumulative average trucks/day across the whole run so far
+  // (elapsed days through the end of this day) — the exact same
+  // completedCount/elapsedDays figure the live Throughput/day KPI reports.
+  // Deliberately distinct from `trucksProcessed` above (this one day's own
+  // count): showing both lets a user see "how today went" alongside "how
+  // the whole run is trending".
+  const completedThroughDayEnd = result.trucks.filter((tr) => tr.departureTime != null && tr.departureTime <= dayEnd).length;
+  const elapsedDays = dayEnd / 1440;
+  const throughputPerDay = elapsedDays > 0 ? completedThroughDayEnd / elapsedDays : 0;
+
+  return {
+    dayIndex,
+    dayNumber: dayIndex + 1,
+    dayStart,
+    dayEnd,
+    trucksProcessed,
+    avgWaitingTime,
+    throughputPerDay,
+    bayUtilization,
+    workerUtilization,
+    bottleneck,
+  };
+}
+
 /** Full-horizon, coarse (day-scale) version of the KPI-card metrics —
  *  computed once per run, sampled at `numPoints` evenly-spaced times from
  *  day 0 through the current run's full duration. This is the "zoomed all
