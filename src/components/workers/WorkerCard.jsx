@@ -4,7 +4,7 @@ import {
   Wrench, Hammer, Gauge, Zap, Flame, Disc, User, Users,
   ChevronDown, Moon, Flame as OverloadIcon, CheckCircle2, AlertTriangle,
 } from 'lucide-react';
-import { utilTone } from '../../lib/styleMaps.js';
+import { utilTone, DEPT_BOTTLENECK_COLOR, BAY_BOTTLENECK_COLOR, hexToRgba } from '../../lib/styleMaps.js';
 import Badge from '../ui/Badge.jsx';
 import AnimatedNumber from '../ui/AnimatedNumber.jsx';
 
@@ -25,15 +25,19 @@ function classify(dept) {
   return 'normal';
 }
 
+// Fixed (non-bottleneck) card states keep their original blue/amber/red
+// tailwind-matched hexes (blue-300 / amber-400 / red-400) — only the
+// *bottleneck* state's color is dynamic (per department), so every state
+// is expressed the same way (a hex, applied via inline style) rather than
+// mixing static Tailwind color classes with dynamic inline colors on the
+// same element.
 const STATE_STYLE = {
-  idle: { stripe: 'border-l-blue-300', tint: 'bg-blue-50/50', tag: 'blue', label: 'Idle', icon: Moon },
-  full: { stripe: 'border-l-amber-400', tint: 'bg-amber-50/50', tag: 'amber', label: 'Fully Occupied', icon: CheckCircle2 },
-  overloaded: { stripe: 'border-l-red-400', tint: 'bg-red-50/50', tag: 'red', label: 'Overloaded', icon: OverloadIcon },
-  normal: { stripe: 'border-l-transparent', tint: '', tag: null, label: null, icon: null },
-  empty: { stripe: 'border-l-transparent', tint: '', tag: null, label: null, icon: null },
+  idle: { hex: '#93c5fd', tag: 'blue', label: 'Idle', icon: Moon },
+  full: { hex: '#fbbf24', tag: 'amber', label: 'Fully Occupied', icon: CheckCircle2 },
+  overloaded: { hex: '#f87171', tag: 'red', label: 'Overloaded', icon: OverloadIcon },
+  normal: { hex: null, tag: null, label: null, icon: null },
+  empty: { hex: null, tag: null, label: null, icon: null },
 };
-
-const BOTTLENECK_STYLE = { stripe: 'border-l-red-500', tint: 'bg-red-50/70', tag: 'red', label: 'Bottleneck', icon: AlertTriangle };
 
 /** An interactive department card: icon, busy/available/total headcounts,
  *  utilization badge + smoothly animated bar, small worker avatars, and a
@@ -41,15 +45,25 @@ const BOTTLENECK_STYLE = { stripe: 'border-l-red-500', tint: 'bg-red-50/70', tag
  *  current bottleneck). Click to expand the roster's skill composition
  *  (High/Med/Low/Absent — read directly from the run's config, display-
  *  only). All numbers are read as-is from `dept`/`roster`; nothing here
- *  recomputes anything. */
+ *  recomputes anything.
+ *
+ *  When this department IS the current bottleneck, the card's left stripe,
+ *  background tint and ring switch to that department's own unique color
+ *  from the color-coded bottleneck system (see lib/styleMaps.js) instead of
+ *  a generic red — so "which department is slowing things down" is
+ *  identifiable at a glance and matches the same color used for it on the
+ *  floor plan and in the legend. */
 export default function WorkerCard({ dept, roster, isBottleneck }) {
   const [expanded, setExpanded] = useState(false);
   const Icon = DEPT_ICON[dept.key] || User;
   const tone = utilTone(dept.utilization);
   const dots = Math.min(dept.total, 12);
   const state = classify(dept);
-  const style = isBottleneck ? BOTTLENECK_STYLE : STATE_STYLE[state];
-  const StateIcon = style.icon;
+  const bnColor = DEPT_BOTTLENECK_COLOR[dept.key] || BAY_BOTTLENECK_COLOR;
+  const baseStyle = STATE_STYLE[state];
+  const activeHex = isBottleneck ? bnColor.hex : baseStyle.hex;
+  const activeLabel = isBottleneck ? `Bottleneck · ${dept.name}` : baseStyle.label;
+  const StateIcon = isBottleneck ? AlertTriangle : baseStyle.icon;
 
   return (
     <motion.div
@@ -59,17 +73,33 @@ export default function WorkerCard({ dept, roster, isBottleneck }) {
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded((v) => !v); }}
-      className={`cursor-pointer select-none rounded-lg border border-l-4 border-line ${style.stripe} ${style.tint || 'bg-surface-soft'} p-3 shadow-sm transition-shadow hover:shadow-cardHover ${
-        isBottleneck ? 'ring-2 ring-red-300/70 ring-offset-2 ring-offset-surface' : ''
-      }`}
+      style={{
+        borderLeftColor: activeHex || undefined,
+        backgroundColor: activeHex ? hexToRgba(activeHex, isBottleneck ? 0.07 : 0.05) : undefined,
+        boxShadow: isBottleneck ? `0 0 0 2px #ffffff, 0 0 0 4px ${hexToRgba(activeHex, 0.55)}` : undefined,
+      }}
+      className={`cursor-pointer select-none rounded-lg border border-l-4 border-line p-3 shadow-sm transition-shadow hover:shadow-cardHover ${
+        activeHex ? '' : 'bg-surface-soft'
+      } ${isBottleneck ? 'ring-offset-2 ring-offset-surface' : ''}`}
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-ink">
           <Icon size={14} className="text-brand-600" /> {dept.name}
         </div>
         <div className="flex items-center gap-1.5">
-          {style.label && (
-            <Badge tone={style.tag} icon={StateIcon} pulse={isBottleneck}>{style.label}</Badge>
+          {activeLabel && (
+            isBottleneck ? (
+              <Badge
+                tone="neutral"
+                icon={StateIcon}
+                pulse
+                style={{ background: hexToRgba(bnColor.hex, 0.12), color: bnColor.hex, borderColor: hexToRgba(bnColor.hex, 0.45) }}
+              >
+                {activeLabel}
+              </Badge>
+            ) : (
+              <Badge tone={baseStyle.tag} icon={StateIcon}>{activeLabel}</Badge>
+            )
           )}
           <Badge tone={tone}>
             <AnimatedNumber value={dept.utilization * 100} decimals={0} suffix="%" />

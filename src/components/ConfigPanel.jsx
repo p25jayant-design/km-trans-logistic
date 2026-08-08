@@ -1,8 +1,8 @@
 import React, { useRef } from 'react';
-import { Settings, Warehouse, Users, Timer, Dices, LayoutList, Truck, UserPlus } from 'lucide-react';
+import { Settings, Warehouse, Users, Timer, Dices, LayoutList, Truck, UserPlus, AlertTriangle } from 'lucide-react';
 import Card from './ui/Card.jsx';
 import Panel from './ui/Panel.jsx';
-import { DEPT_KEYS, DEPT_NAMES } from '../engine/desEngine.js';
+import { DEPT_KEYS, DEPT_NAMES, NATURAL_ACCIDENT_PCT } from '../engine/desEngine.js';
 
 function Field({ label, children }) {
   return (
@@ -65,6 +65,18 @@ export default function ConfigPanel({ config, setConfig }) {
     update({ carCarrierPct: (100 - fb) / 100 });
   };
 
+  // Accident Repair Arrival Percentage — the remaining share automatically
+  // becomes Standard, exactly like the Flatbed/Car Carrier pair above. See
+  // the comment above ACCIDENT_STANDARD_POOL_RATE in desEngine.js for what
+  // this does and doesn't change about the simulation. Default is
+  // NATURAL_ACCIDENT_PCT (~0.7%), so the readout needs one decimal place of
+  // precision — a plain Math.round would collapse a sub-1% value to "1%".
+  // The slider itself steps in 0.1% increments for the same reason.
+  const accidentPctValue = (config.accidentPct ?? NATURAL_ACCIDENT_PCT) * 100;
+  const accidentPctDisplay = accidentPctValue.toFixed(1);
+  const standardPctDisplay = (100 - accidentPctValue).toFixed(1);
+  const setAccidentPct = (val) => update({ accidentPct: Math.min(1, Math.max(0, Number(val) / 100 || 0)) });
+
   return (
     <Card title="Configuration" icon={Settings} className="h-fit" bodyClassName="max-h-[calc(100vh-110px)] overflow-y-auto pr-1">
       <section className="mb-5">
@@ -95,6 +107,25 @@ export default function ConfigPanel({ config, setConfig }) {
               </Field>
             </div>
             <p className="mt-1 text-[10px] text-ink-faint">Auto-normalized — the two always sum to 100%.</p>
+          </div>
+
+          <div>
+            <div className="mb-1 flex items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
+              <AlertTriangle size={12} /> Accident Repair Arrival Percentage
+            </div>
+            <input
+              type="range" min={0} max={100} step={0.1}
+              value={accidentPctValue}
+              onChange={(e) => setAccidentPct(e.target.value)}
+              className="w-full accent-brand-600"
+            />
+            <div className="mt-1 flex items-center justify-between text-[11.5px] font-semibold">
+              <span className="text-red-600">Accident Repair: {accidentPctDisplay}%</span>
+              <span className="text-emerald-600">Standard: {standardPctDisplay}%</span>
+            </div>
+            <p className="mt-1 text-[10px] text-ink-faint">
+              Splits only the combined Accident Repair + Standard-job arrival pool — every other job type (Medium, Denting, Cabin Setting, Engine Overhaul, Inspection) keeps its own unchanged rate. Defaults to ~0.7%, the case's own natural share, so out of the box nothing about baseline behavior changes — drag the slider to model a heavier or lighter accident load.
+            </p>
           </div>
 
           <Field label="Scheduling policy">

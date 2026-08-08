@@ -56,3 +56,52 @@ export function utilTone(pct) {
   if (pct >= 0.6) return 'amber';
   return 'green';
 }
+
+/** Converts a `#rrggbb` (or shorthand `#rgb`) hex color into an `rgba()`
+ *  string at the given alpha — used to derive soft tints/rings from a
+ *  department's bottleneck color without needing a second hand-picked
+ *  color per department. */
+export function hexToRgba(hex, alpha = 1) {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/* Color-coded bottleneck system. `frame.bottleneck` (see frameSelectors.js)
+   is either a bay-type shortage (kind: 'bay') or a worker-department
+   shortage (kind: 'dept'). Bay-type bottlenecks keep using the single
+   existing red already used everywhere in the app for "this needs
+   attention" (unchanged from before this system existed — kept here as a
+   named constant, `BAY_BOTTLENECK_COLOR`, purely so every consumer can
+   share one definition instead of re-typing the same hex). Department
+   bottlenecks each get their own unique, easily-told-apart hue — none of
+   which collide with red (bay bottleneck), orange (busy/allocated), blue
+   (waiting/reserved), green (available/service) or gray (completed), so a
+   bottleneck's *cause* is visually unambiguous at a glance. Every entry
+   carries a solid `hex` (border/icon/text), a very light `fill` (card
+   background tint) and a mid-tone `stroke` (badge border) — the same
+   three-tier shape as `BAY_STATUS_COLOR` above, so components can treat
+   both palettes identically. */
+export const DEPT_BOTTLENECK_COLOR = {
+  mech: { hex: '#6366f1', fill: '#eef2ff', stroke: '#a5b4fc', text: 'text-indigo-700' }, // indigo — Mechanical
+  dent: { hex: '#db2777', fill: '#fdf2f8', stroke: '#f9a8d4', text: 'text-pink-700' },   // pink — Denting
+  bal: { hex: '#9333ea', fill: '#faf5ff', stroke: '#d8b4fe', text: 'text-purple-700' },  // purple — Balancer
+  elec: { hex: '#ca8a04', fill: '#fefce8', stroke: '#fde047', text: 'text-yellow-700' }, // yellow — Electrician
+  weld: { hex: '#92400e', fill: '#fff7ed', stroke: '#fdba74', text: 'text-amber-800' },  // amber/brown — Welder
+  tire: { hex: '#0f766e', fill: '#f0fdfa', stroke: '#5eead4', text: 'text-teal-700' },   // teal — Tire
+};
+
+export const BAY_BOTTLENECK_COLOR = { hex: '#dc2626', fill: '#fee2e2', stroke: '#f87171', text: 'text-red-700' };
+
+/** Looks up the right color object for whichever kind of bottleneck is
+ *  currently active — the one place every component asks "what color is
+ *  this bottleneck", so the bay-vs-department color choice never has to be
+ *  duplicated (or drift) across Navbar, WorkshopOverview, WorkerCard,
+ *  BayCard and the floor plan. */
+export function bottleneckColorFor(bottleneck) {
+  if (!bottleneck) return null;
+  if (bottleneck.kind === 'dept') return DEPT_BOTTLENECK_COLOR[bottleneck.key] || BAY_BOTTLENECK_COLOR;
+  return BAY_BOTTLENECK_COLOR;
+}
