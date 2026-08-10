@@ -9,9 +9,10 @@ const TONES = {
   gray: 'bg-gray-100 text-gray-500 border-gray-200',
 };
 
-export default function Badge({ tone = 'neutral', children, className = '', icon: Icon, pulse = false }) {
+export default function Badge({ tone = 'neutral', children, className = '', icon: Icon, pulse = false, style }) {
   return (
     <span
+      style={style}
       className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${TONES[tone]} ${className}`}
     >
       {pulse && <span className="relative flex h-1.5 w-1.5">

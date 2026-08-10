@@ -5,8 +5,10 @@ import { Line } from 'react-chartjs-2';
 import { TrendingUp, TrendingDown, Minus, Maximize2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import AnimatedNumber from '../ui/AnimatedNumber.jsx';
 import Sparkline from '../ui/Sparkline.jsx';
+import InfoTooltip from '../ui/InfoTooltip.jsx';
 import { trendDirection } from '../../lib/theme.js';
 import { BASE_LINE_OPTIONS, makeGradientFill } from '../../lib/chartTheme.js';
+import { KPI_DEFINITIONS_BY_ID } from '../../lib/kpiDefinitions.js';
 
 const TREND_STYLE = {
   up: { icon: TrendingUp, cls: 'text-emerald-600 bg-emerald-50' },
@@ -59,11 +61,17 @@ function buildChartData({ series, labels, color, label }) {
  *  Both views come from data the engine already produced (buildTrends /
  *  buildFullKpiSeries) — this only changes which precomputed series is
  *  currently on screen. */
-export default function KpiCard({ icon: Icon, label, value, decimals = 0, suffix = '', trend = [], times = [], fullSeries = [], fullTimes = [], color = '#2563eb' }) {
+export default function KpiCard({ id, icon: Icon, label, value, decimals = 0, suffix = '', trend = [], times = [], fullSeries = [], fullTimes = [], color = '#2563eb', yAxisLabel = '', onInfoClick }) {
   const [expanded, setExpanded] = useState(false);
   const [view, setView] = useState('recent'); // 'recent' | 'full'
   const chartAreaRef = useRef(null);
   const lastToggleRef = useRef(0);
+
+  // `id` looks up this card's entry in the shared KPI_DEFINITIONS list — the
+  // same entry the "What do these KPIs mean?" panel renders in full below
+  // the grid, so the tooltip's short blurb here and that panel's long-form
+  // explanation can never say something different about the same number.
+  const def = id ? KPI_DEFINITIONS_BY_ID[id] : null;
 
   const t = trend.length > 1 ? trendDirection(trend) : null;
   const trendStyle = t ? TREND_STYLE[t.dir] : null;
@@ -108,6 +116,18 @@ export default function KpiCard({ icon: Icon, label, value, decimals = 0, suffix
       : buildChartData({ series: trend, labels: times.length === trend.length ? times.map(clockLabel) : trend.map((_, i) => i), color, label })
   ) : null;
 
+  // Explicit axis titles for the expanded chart — the X-axis always plots
+  // simulation time (never wall-clock time), just at two different
+  // granularities depending on `view`: the fine "Recent" window labels each
+  // point HH:MM within the current simulated day (see clockLabel above),
+  // while "Full Run" labels each point by simulated day number (dayLabel
+  // above) across the whole horizon. The Y-axis title is whatever unit this
+  // specific KPI actually is (`yAxisLabel`, passed in from KPIGrid.jsx —
+  // e.g. "Minutes" for a duration, "%" for a utilization, "Trucks" for a
+  // count) — labeling it explicitly instead of leaving Chart.js's bare
+  // numeric ticks to (mis)imply their own units.
+  const xAxisTitle = showingFull ? 'Simulation Day' : 'Simulation Time (HH:MM, current day)';
+
   const expandedOptions = {
     ...BASE_LINE_OPTIONS,
     plugins: {
@@ -121,8 +141,16 @@ export default function KpiCard({ icon: Icon, label, value, decimals = 0, suffix
     },
     scales: {
       ...BASE_LINE_OPTIONS.scales,
-      x: { ...BASE_LINE_OPTIONS.scales.x, ticks: { ...BASE_LINE_OPTIONS.scales.x.ticks, maxTicksLimit: showingFull ? 10 : 8, font: { size: 11 } } },
-      y: { ...BASE_LINE_OPTIONS.scales.y, ticks: { ...BASE_LINE_OPTIONS.scales.y.ticks, font: { size: 11 } } },
+      x: {
+        ...BASE_LINE_OPTIONS.scales.x,
+        ticks: { ...BASE_LINE_OPTIONS.scales.x.ticks, maxTicksLimit: showingFull ? 10 : 8, font: { size: 11 } },
+        title: { display: true, text: xAxisTitle, color: '#64748b', font: { size: 11, weight: '600' }, padding: { top: 8 } },
+      },
+      y: {
+        ...BASE_LINE_OPTIONS.scales.y,
+        ticks: { ...BASE_LINE_OPTIONS.scales.y.ticks, font: { size: 11 } },
+        title: { display: !!yAxisLabel, text: yAxisLabel, color: '#64748b', font: { size: 11, weight: '600' }, padding: { bottom: 8 } },
+      },
     },
   };
 
@@ -142,6 +170,13 @@ export default function KpiCard({ icon: Icon, label, value, decimals = 0, suffix
           </span>
           <div className="flex items-center gap-1">
             {trend.length > 1 && <Sparkline data={trend} color={color} />}
+            {def && (
+              <InfoTooltip
+                text={def.short}
+                label={label}
+                onOpen={() => onInfoClick?.(id)}
+              />
+            )}
             {canExpand && (
               <button
                 type="button"

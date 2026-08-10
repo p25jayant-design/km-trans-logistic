@@ -13,7 +13,7 @@ export default function WorkerPanel({ result, frame }) {
             key={dept.key}
             dept={dept}
             roster={result?.cfg?.departments?.[dept.key]}
-            isBottleneck={frame?.bottleneck?.label === `${dept.name} Dept`}
+            isBottleneck={frame?.bottleneck?.kind === 'dept' && frame.bottleneck.key === dept.key}
           />
         ))}
         {departments.length === 0 && (

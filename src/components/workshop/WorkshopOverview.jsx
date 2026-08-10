@@ -1,5 +1,6 @@
 import React from 'react';
 import { Warehouse, ListOrdered, Users, TrendingUp, AlertTriangle } from 'lucide-react';
+import { bottleneckColorFor, hexToRgba } from '../../lib/styleMaps.js';
 
 function Chip({ icon: Icon, value, label, tone = 'text-ink-soft' }) {
   return (
@@ -39,15 +40,27 @@ export default function WorkshopOverview({ result, frame }) {
       />
       <Chip icon={Users} value={`${(avgWorkerUtil * 100).toFixed(0)}%`} label="workforce busy" />
       <Chip icon={TrendingUp} value={frame.completedSoFar.toLocaleString()} label="serviced" />
-      {frame.bottleneck && (
-        <div className="flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5">
-          <AlertTriangle size={13} className="text-red-500" />
-          <span className="text-[11.5px] font-bold text-red-700">{frame.bottleneck.label}</span>
-          <span className="tabular-nums text-[10.5px] text-red-600">
-            {(frame.bottleneck.utilization * 100).toFixed(0)}% bottleneck
-          </span>
-        </div>
-      )}
+      {frame.bottleneck && (() => {
+        // Bay-type bottlenecks keep the plain red chip exactly as before.
+        // A worker-department bottleneck gets that department's own color
+        // from the color-coded bottleneck system instead.
+        const c = bottleneckColorFor(frame.bottleneck);
+        const isDept = frame.bottleneck.kind === 'dept';
+        return (
+          <div
+            className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 ${isDept ? '' : 'border-red-200 bg-red-50'}`}
+            style={isDept ? { borderColor: c.stroke, background: c.fill } : undefined}
+          >
+            <AlertTriangle size={13} style={isDept ? { color: c.hex } : undefined} className={isDept ? '' : 'text-red-500'} />
+            <span className={`text-[11.5px] font-bold ${isDept ? '' : 'text-red-700'}`} style={isDept ? { color: c.hex } : undefined}>
+              {frame.bottleneck.label}
+            </span>
+            <span className={`tabular-nums text-[10.5px] ${isDept ? '' : 'text-red-600'}`} style={isDept ? { color: c.hex } : undefined}>
+              {(frame.bottleneck.utilization * 100).toFixed(0)}% bottleneck
+            </span>
+          </div>
+        );
+      })()}
     </div>
   );
 }

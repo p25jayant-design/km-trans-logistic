@@ -1,24 +1,30 @@
 import React, { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Factory, Warehouse, Users } from 'lucide-react';
+import { Factory, Warehouse, Users, Timer } from 'lucide-react';
 import { useSimulation } from './hooks/useSimulation.js';
 import { countLE } from './engine/frameSelectors.js';
 import { exportSimulationXlsx } from './lib/exportXlsx.js';
 import Navbar from './components/Navbar.jsx';
+import HelpGuide from './components/HelpGuide.jsx';
+import DayCompleteOverlay from './components/DayCompleteOverlay.jsx';
+import SimulationSummary from './components/SimulationSummary.jsx';
 import ConfigPanel from './components/ConfigPanel.jsx';
 import Workshop from './components/workshop/Workshop.jsx';
 import WorkerPanel from './components/workers/WorkerPanel.jsx';
 import KPIGrid from './components/kpi/KPIGrid.jsx';
 import ChartsPanel from './components/charts/ChartsPanel.jsx';
+import WorkforceOptimizer from './components/workforce/WorkforceOptimizer.jsx';
 import EventTimeline from './components/timeline/EventTimeline.jsx';
 import BootOverlay from './components/BootOverlay.jsx';
 import BayUtilizationPage from './pages/BayUtilizationPage.jsx';
 import WorkerUtilizationPage from './pages/WorkerUtilizationPage.jsx';
+import FlowTimeAnalysisPage from './pages/FlowTimeAnalysisPage.jsx';
 
 const PAGES = [
   { key: 'live', label: 'Live Simulation', icon: Factory },
   { key: 'bays', label: 'Bay Utilization', icon: Warehouse },
   { key: 'workers', label: 'Worker Utilization', icon: Users },
+  { key: 'flow', label: 'Flow Time Analysis', icon: Timer },
 ];
 
 function PageNav({ page, setPage }) {
@@ -48,6 +54,7 @@ export default function App() {
     config, setConfig, result, frame, t,
     playing, speed, setSpeed, status,
     runSimulation, play, pause, reset, jumpToEnd, scrubTo,
+    dayComplete, continueAfterDayComplete,
   } = useSimulation();
 
   const [showConfig, setShowConfig] = useState(false);
@@ -90,6 +97,12 @@ export default function App() {
       />
 
       <BootOverlay open={booting} config={config} onDone={handleBootDone} />
+
+      <DayCompleteOverlay dayComplete={dayComplete} onContinue={continueAfterDayComplete} />
+
+      <div className="mx-auto max-w-[1800px] px-4 pt-4">
+        <HelpGuide />
+      </div>
 
       <PageNav page={page} setPage={setPage} />
 
@@ -138,6 +151,8 @@ export default function App() {
               <div className="flex min-w-0 w-full flex-col gap-4 lg:w-[360px] lg:min-w-[300px] lg:shrink-0">
                 <KPIGrid result={result} frame={frame} />
                 <ChartsPanel result={result} frame={frame} />
+                <WorkforceOptimizer config={config} setConfig={setConfig} result={result} />
+                <SimulationSummary result={result} />
               </div>
             </div>
 
@@ -149,6 +164,7 @@ export default function App() {
 
         {page === 'bays' && <BayUtilizationPage result={result} frame={frame} />}
         {page === 'workers' && <WorkerUtilizationPage result={result} frame={frame} />}
+        {page === 'flow' && <FlowTimeAnalysisPage result={result} frame={frame} />}
       </main>
     </div>
   );

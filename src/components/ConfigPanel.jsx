@@ -1,8 +1,9 @@
-import React, { useRef } from 'react';
-import { Settings, Warehouse, Users, Timer, Dices, LayoutList, Truck, UserPlus } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Settings, Warehouse, Users, Timer, Dices, LayoutList, Truck, AlertTriangle, IndianRupee } from 'lucide-react';
 import Card from './ui/Card.jsx';
 import Panel from './ui/Panel.jsx';
-import { DEPT_KEYS, DEPT_NAMES } from '../engine/desEngine.js';
+import { DEPT_KEYS, DEPT_NAMES, NATURAL_ACCIDENT_PCT } from '../engine/desEngine.js';
+import { DEFAULT_COST_CONFIG } from '../lib/workforceCost.js';
 
 function Field({ label, children }) {
   return (
@@ -19,8 +20,6 @@ const inputCls = 'w-full rounded-md border border-line bg-surface-soft px-2.5 py
  *  control-room layout (not a hidden drawer): operators should be able to
  *  glance at and tweak parameters without losing sight of the floor. */
 export default function ConfigPanel({ config, setConfig }) {
-  const skillRefs = useRef({});
-
   const update = (patch) => setConfig((c) => ({ ...c, ...patch }));
   const updateBay = (key, val) => setConfig((c) => ({ ...c, bays: { ...c.bays, [key]: Number(val) || 0 } }));
   const updateDept = (key, field, val) =>
@@ -31,25 +30,45 @@ export default function ConfigPanel({ config, setConfig }) {
         [key]: { ...c.departments[key], [field]: field === 'absent' ? Math.min(1, Math.max(0, Number(val) / 100 || 0)) : Number(val) || 0 },
       },
     }));
+  const costConfig = config.costConfig || DEFAULT_COST_CONFIG;
+  const updateCost = (field, val) => {
+    const n = Number(val);
+    setConfig((c) => ({
+      ...c,
+      costConfig: { ...(c.costConfig || DEFAULT_COST_CONFIG), [field]: Number.isFinite(n) && n >= 0 ? n : 0 },
+    }));
+  };
 
-  /** Adds one worker to a department at the given skill level — it joins
-   *  the same `total`/`high`/`med`/`low` counts the DES engine already
-   *  reads (see desEngine.js's `avgSkill` calculation), so the new worker
-   *  is immediately part of the allocation pool and its service-time
-   *  scaling comes out of the exact same, unmodified formula as every
-   *  existing worker in that department. */
-  const addWorker = (deptKey, skillLevel) => {
-    const field = ['high', 'med', 'low'].includes(skillLevel) ? skillLevel : 'high';
-    setConfig((c) => {
-      const d = c.departments[deptKey];
-      return {
-        ...c,
-        departments: {
-          ...c.departments,
-          [deptKey]: { ...d, total: d.total + 1, [field]: d[field] + 1 },
-        },
-      };
-    });
+  // Horizon (days) needs its own local "what's literally typed" state,
+  // separate from config.horizonDays itself: the old version wrote
+  // `Number(e.target.value) || 30` straight into config on every keystroke,
+  // so the instant the field was fully cleared (value === ''), Number('')
+  // is 0, `0 || 30` fell back to 30 and snapped the field's displayed value
+  // right back to "30" — making it impossible to ever clear the field out
+  // to type a fresh number; only the spinner arrows (which never pass
+  // through an empty string) could actually change it. Typing now updates
+  // this local text freely, including transiently empty, and only pushes a
+  // real number into config once there is one; blur is what settles on a
+  // final, clamped [1, 365] value (and restores the last valid number if
+  // the field was left empty or invalid).
+  const [horizonInput, setHorizonInput] = useState(String(config.horizonDays));
+  useEffect(() => { setHorizonInput(String(config.horizonDays)); }, [config.horizonDays]);
+  const handleHorizonChange = (e) => {
+    const raw = e.target.value;
+    setHorizonInput(raw);
+    if (raw === '') return;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) update({ horizonDays: n });
+  };
+  const handleHorizonBlur = () => {
+    const n = Number(horizonInput);
+    if (horizonInput === '' || !Number.isFinite(n) || n <= 0) {
+      setHorizonInput(String(config.horizonDays));
+      return;
+    }
+    const clamped = Math.max(1, Math.min(365, Math.round(n)));
+    setHorizonInput(String(clamped));
+    update({ horizonDays: clamped });
   };
 
   const applyPreset = (preset) => {
@@ -65,6 +84,18 @@ export default function ConfigPanel({ config, setConfig }) {
     update({ carCarrierPct: (100 - fb) / 100 });
   };
 
+  // Accident Repair Arrival Percentage — the remaining share automatically
+  // becomes Standard, exactly like the Flatbed/Car Carrier pair above. See
+  // the comment above ACCIDENT_STANDARD_POOL_RATE in desEngine.js for what
+  // this does and doesn't change about the simulation. Default is
+  // NATURAL_ACCIDENT_PCT (~0.7%), so the readout needs one decimal place of
+  // precision — a plain Math.round would collapse a sub-1% value to "1%".
+  // The slider itself steps in 0.1% increments for the same reason.
+  const accidentPctValue = (config.accidentPct ?? NATURAL_ACCIDENT_PCT) * 100;
+  const accidentPctDisplay = accidentPctValue.toFixed(1);
+  const standardPctDisplay = (100 - accidentPctValue).toFixed(1);
+  const setAccidentPct = (val) => update({ accidentPct: Math.min(1, Math.max(0, Number(val) / 100 || 0)) });
+
   return (
     <Card title="Configuration" icon={Settings} className="h-fit" bodyClassName="max-h-[calc(100vh-110px)] overflow-y-auto pr-1">
       <section className="mb-5">
@@ -72,11 +103,17 @@ export default function ConfigPanel({ config, setConfig }) {
           <Timer size={13} /> Simulation Horizon
         </div>
         <div className="space-y-2.5">
-          <Field label="Horizon (days)">
-            <input type="number" min={1} max={365} className={inputCls}
-              value={config.horizonDays}
-              onChange={(e) => update({ horizonDays: Math.max(1, Number(e.target.value) || 30) })} />
-          </Field>
+          <div>
+            <Field label="Horizon (days)">
+              <input type="number" min={1} max={365} className={inputCls}
+                value={horizonInput}
+                onChange={handleHorizonChange}
+                onBlur={handleHorizonBlur} />
+            </Field>
+            <p className="mt-1 text-[10px] text-ink-faint">
+              Tip: for stable, representative results use roughly <strong>14–60 days</strong>. Very short horizons (under ~7 days) may not include enough arrivals of the rarer, long-duration jobs (e.g. Accident Repair, Engine Overhaul) to be meaningful.
+            </p>
+          </div>
 
           <div>
             <div className="mb-1 flex items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
@@ -95,6 +132,25 @@ export default function ConfigPanel({ config, setConfig }) {
               </Field>
             </div>
             <p className="mt-1 text-[10px] text-ink-faint">Auto-normalized — the two always sum to 100%.</p>
+          </div>
+
+          <div>
+            <div className="mb-1 flex items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
+              <AlertTriangle size={12} /> Accident Repair Arrival Percentage
+            </div>
+            <input
+              type="range" min={0} max={100} step={0.1}
+              value={accidentPctValue}
+              onChange={(e) => setAccidentPct(e.target.value)}
+              className="w-full accent-brand-600"
+            />
+            <div className="mt-1 flex items-center justify-between text-[11.5px] font-semibold">
+              <span className="text-red-600">Accident Repair: {accidentPctDisplay}%</span>
+              <span className="text-emerald-600">Standard: {standardPctDisplay}%</span>
+            </div>
+            <p className="mt-1 text-[10px] text-ink-faint">
+              Splits only the combined Accident Repair + Standard-job arrival pool — every other job type (Medium, Denting, Cabin Setting, Engine Overhaul, Inspection) keeps its own unchanged rate. Defaults to ~0.7%, the case's own natural share, so out of the box nothing about baseline behavior changes — drag the slider to model a heavier or lighter accident load.
+            </p>
           </div>
 
           <Field label="Scheduling policy">
@@ -155,28 +211,36 @@ export default function ConfigPanel({ config, setConfig }) {
                   <Field label="Low"><input type="number" min={0} className={inputCls} value={d.low} onChange={(e) => updateDept(k, 'low', e.target.value)} /></Field>
                   <Field label="Absent %"><input type="number" min={0} max={100} className={inputCls} value={Math.round(d.absent * 100)} onChange={(e) => updateDept(k, 'absent', e.target.value)} /></Field>
                 </div>
-
-                <div className="mt-2 flex items-center gap-1.5 border-t border-line pt-2">
-                  <select
-                    ref={(el) => { skillRefs.current[k] = el; }}
-                    defaultValue="high"
-                    className="flex-1 rounded-md border border-line bg-white px-2 py-1 text-[11px] text-ink focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-                  >
-                    <option value="high">New worker — High Skill</option>
-                    <option value="med">New worker — Medium Skill</option>
-                    <option value="low">New worker — Low Skill</option>
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => addWorker(k, skillRefs.current[k]?.value)}
-                    className="flex shrink-0 items-center gap-1 rounded-md bg-brand-600 px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-brand-700 active:scale-95"
-                  >
-                    <UserPlus size={12} /> Add
-                  </button>
-                </div>
               </Panel>
             );
           })}
+        </div>
+      </section>
+
+      <section className="mt-5">
+        <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-faint">
+          <IndianRupee size={13} /> Cost Assumptions
+        </div>
+        <p className="mb-2 text-[10px] text-ink-faint">
+          Used by the Workforce Cost &amp; Optimizer panel only — has no effect on the simulation itself. Rs/hour per skill tier, and the assumed cost of one truck-minute spent waiting.
+        </p>
+        <div className="grid grid-cols-3 gap-1.5">
+          <Field label="High Rs/hr"><input type="number" min={0} className={inputCls} value={costConfig.wageHigh} onChange={(e) => updateCost('wageHigh', e.target.value)} /></Field>
+          <Field label="Med Rs/hr"><input type="number" min={0} className={inputCls} value={costConfig.wageMed} onChange={(e) => updateCost('wageMed', e.target.value)} /></Field>
+          <Field label="Low Rs/hr"><input type="number" min={0} className={inputCls} value={costConfig.wageLow} onChange={(e) => updateCost('wageLow', e.target.value)} /></Field>
+        </div>
+        <div className="mt-1.5">
+          <Field label="Wait cost (Rs/truck-minute)"><input type="number" min={0} step={0.5} className={inputCls} value={costConfig.waitCostPerMin} onChange={(e) => updateCost('waitCostPerMin', e.target.value)} /></Field>
+        </div>
+        <p className="mt-2 text-[10px] text-ink-faint">
+          Waiting cost escalates the longer a truck waits — Rs/min above steps up <strong>x2</strong> past the first threshold and <strong>x4</strong> past the second (long waits are usually a sign of too few bays/workers, not routine queueing).
+        </p>
+        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+          <Field label="x2 after (hrs)"><input type="number" min={0} step={0.5} className={inputCls} value={costConfig.waitTier2Hours} onChange={(e) => updateCost('waitTier2Hours', e.target.value)} /></Field>
+          <Field label="x4 after (hrs)"><input type="number" min={0} step={0.5} className={inputCls} value={costConfig.waitTier3Hours} onChange={(e) => updateCost('waitTier3Hours', e.target.value)} /></Field>
+        </div>
+        <div className="mt-1.5">
+          <Field label="Warn when waiting cost reaches (% of total cost)"><input type="number" min={0} max={100} className={inputCls} value={costConfig.waitCostWarnPct} onChange={(e) => updateCost('waitCostWarnPct', e.target.value)} /></Field>
         </div>
       </section>
 
