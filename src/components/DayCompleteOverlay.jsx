@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { CalendarCheck2, PartyPopper, SkipForward, PauseCircle, AlertTriangle } from 'lucide-react';
 import StatTile from './ui/StatTile.jsx';
 import { fmtDuration } from '../lib/theme.js';
-import { bottleneckColorFor } from '../lib/styleMaps.js';
 import { bottleneckColorFor, hexToRgba } from '../lib/styleMaps.js';
 
 const AUTO_RESUME_SECONDS = 6;
