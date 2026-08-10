@@ -13,6 +13,7 @@ import Workshop from './components/workshop/Workshop.jsx';
 import WorkerPanel from './components/workers/WorkerPanel.jsx';
 import KPIGrid from './components/kpi/KPIGrid.jsx';
 import ChartsPanel from './components/charts/ChartsPanel.jsx';
+import WorkforceOptimizer from './components/workforce/WorkforceOptimizer.jsx';
 import EventTimeline from './components/timeline/EventTimeline.jsx';
 import BootOverlay from './components/BootOverlay.jsx';
 import BayUtilizationPage from './pages/BayUtilizationPage.jsx';
@@ -150,6 +151,7 @@ export default function App() {
               <div className="flex min-w-0 w-full flex-col gap-4 lg:w-[360px] lg:min-w-[300px] lg:shrink-0">
                 <KPIGrid result={result} frame={frame} />
                 <ChartsPanel result={result} frame={frame} />
+                <WorkforceOptimizer config={config} setConfig={setConfig} result={result} />
                 <SimulationSummary result={result} />
               </div>
             </div>
