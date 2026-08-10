@@ -35,11 +35,6 @@ export const CANVAS = { width: 1700, height: 1150 };
 export const BAY_W = 104;
 export const BAY_H = 70;
 
-/** Diameter of the compact "node" marker a bay falls back to (see
- *  `bayRenderPlan` below) once a zone has too many bays for even a shrunk
- *  workstation card to fit without overlapping its neighbor. */
-export const NODE_D = 16;
-
 function lerp(a, b, frac) { return a + (b - a) * frac; }
 
 /** Given a zone's rail definition and an ordered list of bay ids, returns
@@ -134,34 +129,6 @@ export function computeZonePositions(layout, zoneKey, bayIds) {
   const zone = layout.zones[zoneKey];
   if (!zone || !bayIds.length) return [];
   return positionsAlongRail(zone, bayIds);
-}
-
-const CARD_EDGE_GAP = 14; // desired clear gap between adjacent bay footprints
-const CARD_MIN_SCALE = 0.42; // below this a shrunk card reads too small — fall back to a node marker
-const NODE_MIN_D = 6; // node markers never shrink smaller than this, even at extreme bay counts
-
-/** Decides how to render every bay in a zone — a full-size workstation card,
- *  a proportionally shrunk card, or a compact road-side "node" marker —
- *  purely from how many bays are configured and how much rail space
- *  (`zone.range`) they have to evenly share (see `positionsAlongRail`,
- *  which always spaces bays evenly across that fixed range regardless of
- *  count). Above some bay count, the fixed BAY_W x BAY_H card would start
- *  overlapping its neighbor along the rail; this keeps that from ever
- *  happening by shrinking the card first, and only falls back to a small
- *  node + connector once shrinking would make the card unreadably small.
- *  Every bay in a zone shares the same mode/size, since they're always
- *  evenly spaced with identical spacing. Purely a rendering decision —
- *  doesn't touch bay *positions* (still evenly spaced across the full
- *  range) or anything simulation-related. */
-export function bayRenderPlan(zone, count) {
-  if (count <= 1) return { mode: 'card', scale: 1, w: BAY_W, h: BAY_H };
-  const spacing = (zone.range[1] - zone.range[0]) / (count - 1);
-  const axisFootprint = zone.axis === 'x' ? BAY_W : BAY_H;
-  const scale = (spacing - CARD_EDGE_GAP) / axisFootprint;
-  if (scale >= 1) return { mode: 'card', scale: 1, w: BAY_W, h: BAY_H };
-  if (scale >= CARD_MIN_SCALE) return { mode: 'card', scale, w: BAY_W * scale, h: BAY_H * scale };
-  const nodeD = Math.max(NODE_MIN_D, Math.min(NODE_D, spacing - 4));
-  return { mode: 'node', scale: 1, w: nodeD, h: nodeD };
 }
 
 /** The short access-lane stub between a zone's main corridor and one of its

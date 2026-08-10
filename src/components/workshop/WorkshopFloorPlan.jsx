@@ -95,7 +95,7 @@ function buildRotationKeyframes(path) {
 /** Evenly-spaced directional flow-arrow markers along a corridor's waypoint
  *  list — purely decorative floor styling, computed fresh from the layout's
  *  own waypoints so it automatically follows whichever shape is selected. */
-function computeFlowArrows(points, spacing = 160) {
+function computeFlowArrows(points, spacing = 130) {
   const arrows = [];
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i], b = points[i + 1];
@@ -125,24 +125,18 @@ function BottleneckSwatch({ color, label }) {
 
 /** Bounding band behind every bay in a zone — the tinted "service area"
  *  rectangle that makes Standard / Dedicated / Inspection read as three
- *  clearly separated, aligned areas rather than loose points. Sized off the
- *  zone's actual rendered bay footprint (`footprint` — full-size card,
- *  shrunk card, or node marker, from `bayRenderPlan`) rather than a
- *  hardcoded card size, so the band hugs the bays tightly whichever mode
- *  they're rendering in, instead of leaving a loose, oversized band around
- *  small shrunk cards or nodes. */
-function zoneBand(zone, positions, footprint) {
+ *  clearly separated, aligned areas rather than loose points. */
+function zoneBand(zone, positions) {
   if (!positions.length) return null;
-  const { w, h } = footprint;
   const pad = 16;
   if (zone.axis === 'x') {
     const xs = positions.map((p) => p.x);
     const y = zone.corridor + zone.dock;
-    return { x: Math.min(...xs) - w / 2 - pad, y: y - h / 2 - pad, w: Math.max(...xs) - Math.min(...xs) + w + pad * 2, h: h + pad * 2 };
+    return { x: Math.min(...xs) - BAY_W / 2 - pad, y: y - BAY_H / 2 - pad, w: Math.max(...xs) - Math.min(...xs) + BAY_W + pad * 2, h: BAY_H + pad * 2 };
   }
   const ys = positions.map((p) => p.y);
   const x = zone.corridor + zone.dock;
-  return { x: x - w / 2 - pad, y: Math.min(...ys) - h / 2 - pad, w: w + pad * 2, h: Math.max(...ys) - Math.min(...ys) + h + pad * 2 };
+  return { x: x - BAY_W / 2 - pad, y: Math.min(...ys) - BAY_H / 2 - pad, w: BAY_W + pad * 2, h: Math.max(...ys) - Math.min(...ys) + BAY_H + pad * 2 };
 }
 
 /* Note on why bays and traveling trucks are positioned the way they are
@@ -207,20 +201,6 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
     ZONE_ORDER.forEach((z) => {
       const ids = frame.bays[z].map((b) => b.id);
       out[z] = computeZonePositions(layout, z, ids);
-    });
-    return out;
-  }, [frame, layout]);
-
-  // How to render each zone's bays — full-size workstation card, a
-  // proportionally shrunk card, or a compact node marker — decided purely
-  // from bay count vs. available rail space (see bayRenderPlan). Recomputed
-  // whenever the configured bay count or layout shape changes; every bay in
-  // a zone shares the same plan since they're always evenly spaced.
-  const zonePlans = useMemo(() => {
-    if (!frame) return { Bu: null, Be: null, Bi: null };
-    const out = {};
-    ZONE_ORDER.forEach((z) => {
-      out[z] = bayRenderPlan(layout.zones[z], frame.bays[z].length);
     });
     return out;
   }, [frame, layout]);
@@ -404,7 +384,7 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
 
           {/* Zone service-area bands, drawn first (under everything else) */}
           {ZONE_ORDER.map((zoneKey) => {
-            const band = zoneBand(layout.zones[zoneKey], zonePositions[zoneKey], zonePlans[zoneKey]);
+            const band = zoneBand(layout.zones[zoneKey], zonePositions[zoneKey]);
             if (!band) return null;
             const meta = ZONE_META[zoneKey];
             const isBn = bottleneckZone === zoneKey;
@@ -422,31 +402,13 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
             );
           })}
 
-          {/* Corridor — a much wider, layered road: a soft outer shoulder,
-              a solid asphalt surface, and a bolder dashed center line, drawn
-              widest-to-narrowest so each layer peeks out from the one
-              beneath it. This is purely a wider/cleaner restyle of the same
-              `layout.drawPath` every zone's `dock` clearance was already
-              sized generously around (see floorLayouts.js) — no coordinates
-              changed, just how thick and how many layers draw the road. */}
-          <motion.path
-            key={`corridor-shoulder-${shape}`}
-            d={layout.drawPath}
-            fill="none"
-            stroke="#e2e8f0"
-            strokeWidth={64}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.35 }}
-          />
+          {/* Corridor — road surface + dashed center line */}
           <motion.path
             key={`corridor-${shape}`}
             d={layout.drawPath}
             fill="none"
-            stroke="#b7c2cf"
-            strokeWidth={50}
+            stroke="#cbd5e1"
+            strokeWidth={26}
             strokeLinecap="round"
             strokeLinejoin="round"
             initial={{ opacity: 0 }}
@@ -458,19 +420,18 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
             d={layout.drawPath}
             fill="none"
             stroke="#f8fafc"
-            strokeWidth={3}
-            strokeDasharray="11 13"
+            strokeWidth={2}
+            strokeDasharray="7 9"
             strokeLinecap="round"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.35 }}
           />
 
-          {/* Directional flow-arrow markers along the corridor, sized and
-              spaced up to match the wider road above. */}
+          {/* Directional flow-arrow markers along the corridor */}
           {flowArrows.map((a) => (
-            <g key={`arrow-${shape}-${a.key}`} transform={`translate(${a.x} ${a.y}) rotate(${a.rotation})`} opacity={0.7}>
-              <path d="M -9 -7 L 10 0 L -9 7 Z" fill="#94a3b8" />
+            <g key={`arrow-${shape}-${a.key}`} transform={`translate(${a.x} ${a.y}) rotate(${a.rotation})`} opacity={0.75}>
+              <path d="M -6 -5 L 6 0 L -6 5 Z" fill="#94a3b8" />
             </g>
           ))}
 
@@ -486,15 +447,11 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
             <text x={layout.exit.x} y={layout.exit.y - 21} textAnchor="middle" fontSize={12} fontWeight={700} fill="#475569">EXIT</text>
           </g>
 
-          {/* Access lanes + parking-stall outline + workstation cards (or,
-              for zones with too many bays to fit full cards — see
-              bayRenderPlan in floorLayouts.js — a shrunk card or a compact
-              road-side node + connector instead). */}
+          {/* Access lanes + parking-stall outline + workstation cards */}
           {ZONE_ORDER.map((zoneKey) => {
             const zone = layout.zones[zoneKey];
             const meta = ZONE_META[zoneKey];
             const TypeIcon = meta.icon;
-            const plan = zonePlans[zoneKey] || { mode: 'card', scale: 1, w: BAY_W, h: BAY_H };
             return zonePositions[zoneKey].map((pos) => {
               const bay = frame.bays[zoneKey].find((b) => b.id === pos.id);
               const busy = bay?.status === 'busy';
@@ -509,26 +466,17 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
               const dc = deptBn ? DEPT_BOTTLENECK_COLOR[deptBnKey] : null;
               const sc = dc ? { hex: dc.hex, fill: dc.fill, stroke: dc.stroke, label: `${DEPT_NAMES[deptBnKey]} Shortage` } : BAY_STATUS_COLOR[statusKey];
               const stub = accessStub(layout, zoneKey, pos);
-              // Effective on-screen footprint for this zone's mode (full
-              // card, shrunk card, or node) — every decoration below (access
-              // lane length, parking outline, pulse rings) is sized off
-              // this instead of the fixed BAY_W/BAY_H, so it always hugs
-              // whatever is actually being rendered.
-              const rx = pos.x - plan.w / 2, ry = pos.y - plan.h / 2;
+              const rx = pos.x - BAY_W / 2, ry = pos.y - BAY_H / 2;
               const workers = busy && bay.req
                 ? DEPT_KEYS.filter((k) => bay.req[k] > 0).map((k) => [k, bay.req[k]])
                 : [];
-              const isNode = plan.mode === 'node';
 
               return (
                 <React.Fragment key={pos.id}>
-                  {/* Access lane (driveway) connecting the corridor to the
-                      bay — kept in every mode, including node mode, so a
-                      node marker always still reads as "attached to the
-                      road" rather than a floating dot. */}
+                  {/* Access lane (driveway) connecting the corridor to the bay */}
                   <motion.line
                     stroke="#cbd5e1"
-                    strokeWidth={isNode ? 5 : 10}
+                    strokeWidth={10}
                     strokeLinecap="round"
                     animate={{ x1: stub.from.x, y1: stub.from.y, x2: stub.to.x, y2: stub.to.y }}
                     transition={{ duration: 0.5, ease: 'easeInOut' }}
@@ -568,152 +516,61 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
                     />
                   )}
 
-                  {isNode ? (
-                    <>
-                      {/* Compact road-side node marker — replaces the full
-                          workstation card once this zone has too many bays
-                          for even a shrunk card to fit without overlapping
-                          its neighbor. Same status color as the card would
-                          use; hover still opens the same truck detail
-                          tooltip when occupied. */}
-                      {(approaching || deptBn) && (
-                        <motion.circle
-                          cx={pos.x}
-                          cy={pos.y}
-                          fill="none"
-                          stroke={deptBn ? dc.hex : BAY_STATUS_COLOR.reserved.hex}
-                          strokeWidth={2}
-                          animate={{ r: plan.w / 2 + 4, opacity: [0.9, 0.2, 0.9] }}
-                          transition={{ r: { duration: 0.5 }, opacity: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } }}
-                        />
-                      )}
-                      <circle
-                        cx={pos.x}
-                        cy={pos.y}
-                        r={plan.w / 2}
-                        fill={sc.hex}
-                        stroke="#ffffff"
-                        strokeWidth={1.5}
-                        style={{ cursor: busy ? 'pointer' : 'default' }}
-                        onMouseEnter={busy ? showHover(bay.truckId) : undefined}
-                        onMouseLeave={busy ? clearHover : undefined}
-                      >
-                        <title>{`Bay ${pos.id} — ${sc.label}${busy ? ` — #${bay.truckId}` : ''}`}</title>
-                      </circle>
-                      {plan.w >= 11 && (
-                        <text
-                          x={pos.x}
-                          y={pos.y + plan.w / 2 + 8}
-                          textAnchor="middle"
-                          fontSize={7}
-                          fontWeight={700}
-                          fill="#64748b"
-                          pointerEvents="none"
+                  {/* Workstation card — plain SVG `transform` attribute on a
+                      non-motion `<g>` (unambiguous user-space units, CSS-
+                      transitioned for the glide) wrapping a static,
+                      never-animated `<foreignObject>`. See the note above
+                      `ZONE_ORDER.map` for why this avoids motion.foreignObject. */}
+                  <g
+                    transform={`translate(${rx} ${ry})`}
+                    style={{ transition: 'transform 0.5s ease-in-out', cursor: busy ? 'pointer' : 'default' }}
+                    onMouseEnter={busy ? showHover(bay.truckId) : undefined}
+                    onMouseLeave={busy ? clearHover : undefined}
+                  >
+                  <foreignObject width={BAY_W} height={BAY_H} style={{ overflow: 'visible' }}>
+                    <div
+                      className="flex h-full w-full flex-col overflow-hidden rounded-md border-2 shadow-sm"
+                      style={{ borderColor: sc.stroke, background: sc.fill }}
+                    >
+                      <div className="flex shrink-0 items-center justify-between px-1.5 py-[1.5px]" style={{ background: sc.hex }}>
+                        <span className="font-bold text-white" style={{ fontSize: 9.5 }}>{pos.id}</span>
+                        <TypeIcon size={9} className="text-white" strokeWidth={2.25} />
+                      </div>
+                      <div className="flex flex-1 flex-col items-center justify-center gap-[1px] px-1 py-[1px]">
+                        <span
+                          className="rounded-full border px-1.5 font-bold leading-tight"
+                          style={{ fontSize: 6.5, color: sc.hex, borderColor: sc.stroke, background: 'white' }}
                         >
-                          {pos.id}
-                        </text>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {/* Parking-stall dashed outline, slightly larger than the card */}
-                      <motion.rect
-                        rx={8}
-                        fill="none"
-                        stroke="#cbd5e1"
-                        strokeWidth={1}
-                        strokeDasharray="3 3"
-                        animate={{ x: rx - 6, y: ry - 6, width: plan.w + 12, height: plan.h + 12 }}
-                        transition={{ duration: 0.5, ease: 'easeInOut' }}
-                      />
-                      {/* Reserved pulse ring (bay allocated, truck still in transit) */}
-                      {(approaching) && (
-                        <motion.rect
-                          rx={10}
-                          fill="none"
-                          stroke={BAY_STATUS_COLOR.reserved.hex}
-                          strokeWidth={2.5}
-                          animate={{ x: rx - 4, y: ry - 4, width: plan.w + 8, height: plan.h + 8, opacity: [0.85, 0.15, 0.85] }}
-                          transition={{ x: { duration: 0.5 }, y: { duration: 0.5 }, width: { duration: 0.5 }, height: { duration: 0.5 }, opacity: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } }}
-                        />
-                      )}
-                      {/* Worker-department bottleneck pulse ring, in that
-                          department's own color from the color-coded bottleneck
-                          system (see legend below). */}
-                      {deptBn && (
-                        <motion.rect
-                          rx={10}
-                          fill="none"
-                          stroke={dc.hex}
-                          strokeWidth={2.5}
-                          animate={{ x: rx - 4, y: ry - 4, width: plan.w + 8, height: plan.h + 8, opacity: [0.9, 0.2, 0.9] }}
-                          transition={{ x: { duration: 0.5 }, y: { duration: 0.5 }, width: { duration: 0.5 }, height: { duration: 0.5 }, opacity: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } }}
-                        />
-                      )}
-
-                      {/* Workstation card — plain SVG `transform` attribute on a
-                          non-motion `<g>` (unambiguous user-space units, CSS-
-                          transitioned for the glide) wrapping a static,
-                          never-animated `<foreignObject>`. See the note above
-                          `ZONE_ORDER.map` for why this avoids motion.foreignObject.
-                          The card's own internal markup/content is always laid
-                          out at its native BAY_W x BAY_H size — when this zone's
-                          plan calls for a shrunk card (`plan.scale < 1`), the
-                          whole group is uniformly scaled down around the bay's
-                          center point instead, so nothing inside the card (text,
-                          icons, layout) needs its own separate "shrunk" styling. */}
-                      <g
-                        transform={`translate(${pos.x} ${pos.y}) scale(${plan.scale}) translate(${-BAY_W / 2} ${-BAY_H / 2})`}
-                        style={{ transition: 'transform 0.5s ease-in-out', cursor: busy ? 'pointer' : 'default' }}
-                        onMouseEnter={busy ? showHover(bay.truckId) : undefined}
-                        onMouseLeave={busy ? clearHover : undefined}
-                      >
-                      <foreignObject width={BAY_W} height={BAY_H} style={{ overflow: 'visible' }}>
-                        <div
-                          className="flex h-full w-full flex-col overflow-hidden rounded-md border-2 shadow-sm"
-                          style={{ borderColor: sc.stroke, background: sc.fill }}
-                        >
-                          <div className="flex shrink-0 items-center justify-between px-1.5 py-[1.5px]" style={{ background: sc.hex }}>
-                            <span className="font-bold text-white" style={{ fontSize: 9.5 }}>{pos.id}</span>
-                            <TypeIcon size={9} className="text-white" strokeWidth={2.25} />
-                          </div>
-                          <div className="flex flex-1 flex-col items-center justify-center gap-[1px] px-1 py-[1px]">
-                            <span
-                              className="rounded-full border px-1.5 font-bold leading-tight"
-                              style={{ fontSize: 6.5, color: sc.hex, borderColor: sc.stroke, background: 'white' }}
-                            >
-                              {sc.label}
+                          {sc.label}
+                        </span>
+                        {busy ? (
+                          <>
+                            <span className="flex items-center gap-[2px] font-bold leading-tight text-ink" style={{ fontSize: 8 }}>
+                              <Truck size={8} strokeWidth={2.5} /> #{bay.truckId} · {bay.vehicleType}
                             </span>
-                            {busy ? (
-                              <>
-                                <span className="flex items-center gap-[2px] font-bold leading-tight text-ink" style={{ fontSize: 8 }}>
-                                  <Truck size={8} strokeWidth={2.5} /> #{bay.truckId} · {bay.vehicleType}
-                                </span>
-                                <span className="leading-tight text-ink-faint" style={{ fontSize: 6.5 }}>
-                                  {approaching ? 'Inbound' : `${Math.round(bay.remainingMin)} min left`}
-                                </span>
-                                {workers.length > 0 && (
-                                  <div className="mt-[1px] flex flex-wrap items-center justify-center gap-x-1">
-                                    {workers.map(([dept, n]) => {
-                                      const Icon = DEPT_ICON[dept] || Wrench;
-                                      return (
-                                        <span key={dept} className="flex items-center gap-[1px] text-ink-soft" style={{ fontSize: 6.5 }}>
-                                          <Icon size={6.5} strokeWidth={2.5} />{n}
-                                        </span>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </>
-                            ) : (
-                              <span className="leading-tight text-ink-faint" style={{ fontSize: 6.5 }}>Open stall</span>
+                            <span className="leading-tight text-ink-faint" style={{ fontSize: 6.5 }}>
+                              {approaching ? 'Inbound' : `${Math.round(bay.remainingMin)} min left`}
+                            </span>
+                            {workers.length > 0 && (
+                              <div className="mt-[1px] flex flex-wrap items-center justify-center gap-x-1">
+                                {workers.map(([dept, n]) => {
+                                  const Icon = DEPT_ICON[dept] || Wrench;
+                                  return (
+                                    <span key={dept} className="flex items-center gap-[1px] text-ink-soft" style={{ fontSize: 6.5 }}>
+                                      <Icon size={6.5} strokeWidth={2.5} />{n}
+                                    </span>
+                                  );
+                                })}
+                              </div>
                             )}
-                          </div>
-                        </div>
-                      </foreignObject>
-                      </g>
-                    </>
-                  )}
+                          </>
+                        ) : (
+                          <span className="leading-tight text-ink-faint" style={{ fontSize: 6.5 }}>Open stall</span>
+                        )}
+                      </div>
+                    </div>
+                  </foreignObject>
+                  </g>
                 </React.Fragment>
               );
             });
@@ -721,7 +578,7 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
 
           {/* Zone section labels, with bay counts */}
           {ZONE_ORDER.map((zoneKey) => {
-            const band = zoneBand(layout.zones[zoneKey], zonePositions[zoneKey], zonePlans[zoneKey]);
+            const band = zoneBand(layout.zones[zoneKey], zonePositions[zoneKey]);
             if (!band) return null;
             const zone = layout.zones[zoneKey];
             const meta = ZONE_META[zoneKey];

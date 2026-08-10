@@ -178,90 +178,21 @@ export function buildFrame(result, t) {
   };
 }
 
-/** One-time (per simulation run) index of sorted + prefix-summed truck
- *  timelines, so `buildTrends` below can answer "cumulative avg wait / avg
- *  flow time / completed count as of time t" with a couple of cheap binary
- *  searches instead of re-scanning every truck. Same prefix-sum-once,
- *  binary-search-per-query technique this file and desEngine.js already use
- *  elsewhere (computeWaitSeries, computeFlowTimeSeries, validateSimulation's
- *  activeCounter) — built once right after simulate() returns (see
- *  useSimulation.js, where this is stored as `result.trendsIndex`) rather
- *  than rebuilt on every call, since `buildTrends` can run many times per
- *  second while the simulation is playing back. Purely a read-only index
- *  over already-computed truck records — no simulation logic. */
-export function buildTrendsIndex(result) {
-  const started = result.trucks
-    .filter((tr) => tr.serviceStart != null)
-    .map((tr) => ({ t: tr.serviceStart, wait: tr.serviceStart - tr.arrivalTime }))
-    .sort((a, b) => a.t - b.t);
-  const waitTimes = started.map((s) => s.t);
-  const waitPrefix = new Array(started.length + 1).fill(0);
-  for (let i = 0; i < started.length; i++) waitPrefix[i + 1] = waitPrefix[i] + started[i].wait;
-
-  const departed = result.trucks
-    .filter((tr) => tr.departureTime != null)
-    .map((tr) => ({ t: tr.departureTime, flow: tr.departureTime - tr.arrivalTime }))
-    .sort((a, b) => a.t - b.t);
-  const departTimes = departed.map((d) => d.t);
-  const flowPrefix = new Array(departed.length + 1).fill(0);
-  for (let i = 0; i < departed.length; i++) flowPrefix[i + 1] = flowPrefix[i] + departed[i].flow;
-
-  return { waitTimes, waitPrefix, departTimes, flowPrefix };
-}
-
-/** Returns short, per-metric trend arrays (for KPI sparklines and each Live
- *  KPI card's expanded "Recent" chart view) covering the snapshots
+/** Returns short trend arrays (for KPI sparklines) covering the snapshots
  *  immediately before the current time `t` — a rolling "recent history"
- *  window rather than the full run.
- *
- *  Every returned series is the SAME quantity, computed the SAME way, as
- *  the metric it's meant to chart — `avgWait` is genuinely cumulative
- *  average waiting time in minutes (matching the `avgWait` KPI card's own
- *  headline number), `busyBaysCount` is a genuine bay count, `throughputPerDay`
- *  is a genuine rate, and so on. Previously several Live KPI cards were
- *  wired (in KPIGrid.jsx) to a mismatched series here — e.g. "Avg Flow
- *  Time" plotted `queueLen` (a small truck count) instead of an actual
- *  flow-time series — which made Chart.js autoscale the expanded chart's
- *  Y-axis to the wrong metric's range entirely (ticks like 0/0.5/1 instead
- *  of real minutes). Every metric a Live KPI card can show now has its own
- *  correctly-scaled entry here, so feeding the right one in always produces
- *  a correctly-scaled axis with no separate axis-range configuration
- *  needed. */
+ *  window rather than the full run. */
 export function buildTrends(result, t, windowCount = 24) {
-  const EMPTY = { queueLen: [], bayBusyTotal: [], deptUtilAvg: [], busyBaysCount: [], idleBaysCount: [], avgWait: [], avgSystem: [], throughputPerDay: [], completedCount: [], times: [] };
-  if (!result.snapshots.length) return EMPTY;
+  if (!result.snapshots.length) return { queueLen: [], bayBusyTotal: [], deptUtilAvg: [], times: [] };
   const idx = Math.min(result.snapTimes.length - 1, countLE(result.snapTimes, t));
   const start = Math.max(0, idx - windowCount + 1);
   const slice = result.snapshots.slice(start, idx + 1);
   const totalBays = result.cfg.bays.Bu + result.cfg.bays.Be + result.cfg.bays.Bi;
   const deptTotal = DEPT_KEYS.reduce((s, k) => s + (result.deptAvail[k] || 0), 0);
-  const ti = result.trendsIndex; // precomputed once per run — see buildTrendsIndex
-
-  const busyBaysCount = slice.map(s => (s.bay.Bu || 0) + (s.bay.Be || 0) + (s.bay.Bi || 0));
-  const completedCount = slice.map(s => (ti ? countLE(ti.departTimes, s.t) : 0));
 
   return {
     queueLen: slice.map(s => s.queueLen),
     bayBusyTotal: slice.map(s => (totalBays > 0 ? ((s.bay.Bu || 0) + (s.bay.Be || 0) + (s.bay.Bi || 0)) / totalBays : 0) * 100),
     deptUtilAvg: slice.map(s => (deptTotal > 0 ? DEPT_KEYS.reduce((sum, k) => sum + (s.dept[k] || 0), 0) / deptTotal : 0) * 100),
-    busyBaysCount,
-    idleBaysCount: busyBaysCount.map(b => Math.max(0, totalBays - b)),
-    avgWait: slice.map(s => {
-      if (!ti) return 0;
-      const cnt = countLE(ti.waitTimes, s.t);
-      return cnt > 0 ? ti.waitPrefix[cnt] / cnt : 0;
-    }),
-    avgSystem: slice.map(s => {
-      if (!ti) return 0;
-      const cnt = countLE(ti.departTimes, s.t);
-      return cnt > 0 ? ti.flowPrefix[cnt] / cnt : 0;
-    }),
-    completedCount,
-    throughputPerDay: slice.map(s => {
-      const days = s.t / 1440;
-      const cnt = ti ? countLE(ti.departTimes, s.t) : 0;
-      return days > 0 ? cnt / days : 0;
-    }),
     times: slice.map(s => s.t),
   };
 }
