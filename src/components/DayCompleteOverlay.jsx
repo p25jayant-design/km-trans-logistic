@@ -5,6 +5,7 @@ import { CalendarCheck2, PartyPopper, SkipForward, PauseCircle, AlertTriangle } 
 import StatTile from './ui/StatTile.jsx';
 import { fmtDuration } from '../lib/theme.js';
 import { bottleneckColorFor } from '../lib/styleMaps.js';
+import { bottleneckColorFor, hexToRgba } from '../lib/styleMaps.js';
 
 const AUTO_RESUME_SECONDS = 6;
 const CONFETTI_COLORS = ['#2563eb', '#059669', '#ea580c', '#7c3aed', '#d97706', '#db2777'];
@@ -139,19 +140,18 @@ export default function DayCompleteOverlay({ dayComplete, onContinue }) {
               <StatTile value={summary.throughputPerDay.toFixed(1)} label="Throughput /day (avg)" />
               <StatTile value={`${(summary.bayUtilization * 100).toFixed(0)}%`} label="Bay Utilization" />
               <StatTile value={`${(summary.workerUtilization * 100).toFixed(0)}%`} label="Worker Utilization" />
-              <div className="flex flex-col items-center justify-center gap-1 rounded-lg border border-line bg-surface-soft px-2 py-2 text-center">
+              <div className="flex flex-col items-center justify-center rounded-lg border border-line bg-surface-soft px-2 py-2 text-center">
                 {summary.bottleneck ? (
                   <span
-                    className="flex items-center gap-1 text-[19px] font-extrabold tabular-nums"
-                    style={{ color: bnColor.hex }}
+                    className="flex items-center gap-1 rounded-full px-2 py-1 text-[10.5px] font-bold"
+                    style={{ background: hexToRgba(bnColor.hex, 0.12), color: bnColor.hex }}
                   >
-                    <AlertTriangle size={15} className="shrink-0" />
-                    {(summary.bottleneck.utilization * 100).toFixed(0)}%
+                    <AlertTriangle size={11} /> {(summary.bottleneck.utilization * 100).toFixed(0)}%
                   </span>
                 ) : (
-                  <span className="text-[19px] font-extrabold tabular-nums text-ink-faint">—</span>
+                  <span className="text-[10.5px] font-semibold text-ink-faint">—</span>
                 )}
-                <div className="w-full break-words text-[10.5px] font-medium leading-snug text-ink-faint">
+                <div className="mt-1 truncate text-[10.5px] font-medium text-ink-faint">
                   Bottleneck: {summary.bottleneck ? summary.bottleneck.label : 'None'}
                 </div>
               </div>

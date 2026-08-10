@@ -5,7 +5,7 @@ import {
   CheckCircle2, Clock, AlertTriangle, Hammer, Gauge, Zap, Flame, Disc,
   ZoomIn, ZoomOut, Maximize2,
 } from 'lucide-react';
-import { LAYOUTS, computeZonePositions, pathIntoBay, pathOutOfBay, accessStub, bayRenderPlan, BAY_W, BAY_H } from '../../lib/floorLayouts.js';
+import { LAYOUTS, computeZonePositions, pathIntoBay, pathOutOfBay, accessStub, BAY_W, BAY_H } from '../../lib/floorLayouts.js';
 import { TRUCK_STATE_COLOR, BAY_STATUS_COLOR, DEPT_BOTTLENECK_COLOR, BAY_BOTTLENECK_COLOR, hexToRgba } from '../../lib/styleMaps.js';
 import { getTruckDetails } from '../../engine/frameSelectors.js';
 import { DEPT_KEYS, DEPT_NAMES } from '../../engine/desEngine.js';
@@ -533,6 +533,40 @@ export default function WorkshopFloorPlan({ result, frame, shape, setShape }) {
                     animate={{ x1: stub.from.x, y1: stub.from.y, x2: stub.to.x, y2: stub.to.y }}
                     transition={{ duration: 0.5, ease: 'easeInOut' }}
                   />
+                  {/* Parking-stall dashed outline, slightly larger than the card */}
+                  <motion.rect
+                    rx={8}
+                    fill="none"
+                    stroke="#cbd5e1"
+                    strokeWidth={1}
+                    strokeDasharray="3 3"
+                    animate={{ x: rx - 6, y: ry - 6, width: BAY_W + 12, height: BAY_H + 12 }}
+                    transition={{ duration: 0.5, ease: 'easeInOut' }}
+                  />
+                  {/* Reserved pulse ring (bay allocated, truck still in transit) */}
+                  {(approaching) && (
+                    <motion.rect
+                      rx={10}
+                      fill="none"
+                      stroke={BAY_STATUS_COLOR.reserved.hex}
+                      strokeWidth={2.5}
+                      animate={{ x: rx - 4, y: ry - 4, width: BAY_W + 8, height: BAY_H + 8, opacity: [0.85, 0.15, 0.85] }}
+                      transition={{ x: { duration: 0.5 }, y: { duration: 0.5 }, width: { duration: 0.5 }, height: { duration: 0.5 }, opacity: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } }}
+                    />
+                  )}
+                  {/* Worker-department bottleneck pulse ring, in that
+                      department's own color from the color-coded bottleneck
+                      system (see legend below). */}
+                  {deptBn && (
+                    <motion.rect
+                      rx={10}
+                      fill="none"
+                      stroke={dc.hex}
+                      strokeWidth={2.5}
+                      animate={{ x: rx - 4, y: ry - 4, width: BAY_W + 8, height: BAY_H + 8, opacity: [0.9, 0.2, 0.9] }}
+                      transition={{ x: { duration: 0.5 }, y: { duration: 0.5 }, width: { duration: 0.5 }, height: { duration: 0.5 }, opacity: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } }}
+                    />
+                  )}
 
                   {isNode ? (
                     <>

@@ -4,6 +4,11 @@ import Card from './ui/Card.jsx';
 import Panel from './ui/Panel.jsx';
 import { DEPT_KEYS, DEPT_NAMES, NATURAL_ACCIDENT_PCT } from '../engine/desEngine.js';
 import { DEFAULT_COST_CONFIG } from '../lib/workforceCost.js';
+import React, { useRef } from 'react';
+import { Settings, Warehouse, Users, Timer, Dices, LayoutList, Truck, UserPlus, AlertTriangle } from 'lucide-react';
+import Card from './ui/Card.jsx';
+import Panel from './ui/Panel.jsx';
+import { DEPT_KEYS, DEPT_NAMES, NATURAL_ACCIDENT_PCT } from '../engine/desEngine.js';
 
 function Field({ label, children }) {
   return (

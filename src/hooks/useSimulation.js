@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { simulate, computeUtilSeries, computeFlowTimeSeries, DEFAULT_DEPTS, NATURAL_ACCIDENT_PCT } from '../engine/desEngine.js';
-import { buildFrame, buildFullKpiSeries, computeDaySummary, computeCategoryFlowTimeSeries, buildTrendsIndex } from '../engine/frameSelectors.js';
-import { DEFAULT_COST_CONFIG } from '../lib/workforceCost.js';
+import { buildFrame, buildFullKpiSeries, computeDaySummary, computeCategoryFlowTimeSeries } from '../engine/frameSelectors.js';
 
 export const DEFAULT_CONFIG = {
   horizonDays: 30,
@@ -19,11 +18,6 @@ export const DEFAULT_CONFIG = {
   // simulation behavior changes — the slider is a knob the user can move
   // away from this, not a changed starting point.
   accidentPct: NATURAL_ACCIDENT_PCT,
-  // Wage/wait-cost assumptions used by the Workforce Cost & Optimizer panel
-  // (src/lib/workforceCost.js) — editable in ConfigPanel's "Cost
-  // Assumptions" section. Does not affect the DES engine itself in any way;
-  // purely a pricing layer read by workforceCost.js.
-  costConfig: { ...DEFAULT_COST_CONFIG },
 };
 
 /** Discrete playback-speed levels, in simulated minutes advanced per real
@@ -96,12 +90,6 @@ export function useSimulation() {
     // Accident Repair / Standard / All Jobs instead of by individual job
     // type — powers the Flow Time Analysis page's new category dropdown.
     r.flowByCategory = computeCategoryFlowTimeSeries(r, 150);
-    // Precomputed once per run (sorted + prefix-summed truck timelines) so
-    // buildTrends' recent-window KPI series (see frameSelectors.js) can
-    // answer each animation-frame query with cheap binary searches instead
-    // of re-scanning every truck — same cost class as util/kpiSeries/flow
-    // above, just for the Live KPI cards' "recent" trend/sparkline data.
-    r.trendsIndex = buildTrendsIndex(r);
     setResult(r);
     tRef.current = 0;
     setT(0);

@@ -61,7 +61,7 @@ function buildChartData({ series, labels, color, label }) {
  *  Both views come from data the engine already produced (buildTrends /
  *  buildFullKpiSeries) — this only changes which precomputed series is
  *  currently on screen. */
-export default function KpiCard({ id, icon: Icon, label, value, decimals = 0, suffix = '', trend = [], times = [], fullSeries = [], fullTimes = [], color = '#2563eb', yAxisLabel = '', onInfoClick }) {
+export default function KpiCard({ id, icon: Icon, label, value, decimals = 0, suffix = '', trend = [], times = [], fullSeries = [], fullTimes = [], color = '#2563eb', onInfoClick }) {
   const [expanded, setExpanded] = useState(false);
   const [view, setView] = useState('recent'); // 'recent' | 'full'
   const chartAreaRef = useRef(null);
