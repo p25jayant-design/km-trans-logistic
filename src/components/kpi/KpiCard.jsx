@@ -116,6 +116,18 @@ export default function KpiCard({ id, icon: Icon, label, value, decimals = 0, su
       : buildChartData({ series: trend, labels: times.length === trend.length ? times.map(clockLabel) : trend.map((_, i) => i), color, label })
   ) : null;
 
+  // Explicit axis titles for the expanded chart — the X-axis always plots
+  // simulation time (never wall-clock time), just at two different
+  // granularities depending on `view`: the fine "Recent" window labels each
+  // point HH:MM within the current simulated day (see clockLabel above),
+  // while "Full Run" labels each point by simulated day number (dayLabel
+  // above) across the whole horizon. The Y-axis title is whatever unit this
+  // specific KPI actually is (`yAxisLabel`, passed in from KPIGrid.jsx —
+  // e.g. "Minutes" for a duration, "%" for a utilization, "Trucks" for a
+  // count) — labeling it explicitly instead of leaving Chart.js's bare
+  // numeric ticks to (mis)imply their own units.
+  const xAxisTitle = showingFull ? 'Simulation Day' : 'Simulation Time (HH:MM, current day)';
+
   const expandedOptions = {
     ...BASE_LINE_OPTIONS,
     plugins: {
@@ -129,8 +141,16 @@ export default function KpiCard({ id, icon: Icon, label, value, decimals = 0, su
     },
     scales: {
       ...BASE_LINE_OPTIONS.scales,
-      x: { ...BASE_LINE_OPTIONS.scales.x, ticks: { ...BASE_LINE_OPTIONS.scales.x.ticks, maxTicksLimit: showingFull ? 10 : 8, font: { size: 11 } } },
-      y: { ...BASE_LINE_OPTIONS.scales.y, ticks: { ...BASE_LINE_OPTIONS.scales.y.ticks, font: { size: 11 } } },
+      x: {
+        ...BASE_LINE_OPTIONS.scales.x,
+        ticks: { ...BASE_LINE_OPTIONS.scales.x.ticks, maxTicksLimit: showingFull ? 10 : 8, font: { size: 11 } },
+        title: { display: true, text: xAxisTitle, color: '#64748b', font: { size: 11, weight: '600' }, padding: { top: 8 } },
+      },
+      y: {
+        ...BASE_LINE_OPTIONS.scales.y,
+        ticks: { ...BASE_LINE_OPTIONS.scales.y.ticks, font: { size: 11 } },
+        title: { display: !!yAxisLabel, text: yAxisLabel, color: '#64748b', font: { size: 11, weight: '600' }, padding: { bottom: 8 } },
+      },
     },
   };
 
