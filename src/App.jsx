@@ -7,6 +7,7 @@ import { exportSimulationXlsx } from './lib/exportXlsx.js';
 import Navbar from './components/Navbar.jsx';
 import HelpGuide from './components/HelpGuide.jsx';
 import DayCompleteOverlay from './components/DayCompleteOverlay.jsx';
+import FinalSummaryOverlay from './components/FinalSummaryOverlay.jsx';
 import SimulationSummary from './components/SimulationSummary.jsx';
 import ConfigPanel from './components/ConfigPanel.jsx';
 import Workshop from './components/workshop/Workshop.jsx';
@@ -55,6 +56,7 @@ export default function App() {
     playing, speed, setSpeed, status,
     runSimulation, play, pause, reset, jumpToEnd, scrubTo,
     dayComplete, continueAfterDayComplete,
+    finalSummary, dismissFinalSummary,
   } = useSimulation();
 
   const [showConfig, setShowConfig] = useState(false);
@@ -99,6 +101,8 @@ export default function App() {
       <BootOverlay open={booting} config={config} onDone={handleBootDone} />
 
       <DayCompleteOverlay dayComplete={dayComplete} onContinue={continueAfterDayComplete} />
+
+      <FinalSummaryOverlay finalSummary={finalSummary} onClose={dismissFinalSummary} horizonDays={config.horizonDays} />
 
       <div className="mx-auto max-w-[1800px] px-4 pt-4">
         <HelpGuide />

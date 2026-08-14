@@ -5,7 +5,7 @@ import Card from '../ui/Card.jsx';
 import Panel from '../ui/Panel.jsx';
 import StatTile from '../ui/StatTile.jsx';
 import { DEPT_KEYS } from '../../engine/desEngine.js';
-import { DEFAULT_COST_CONFIG, computeCostBreakdown, optimizeWorkforce } from '../../lib/workforceCost.js';
+import { DEFAULT_COST_CONFIG, computeCostBreakdown, optimizeWorkforce, hoursPerDayBreakdown } from '../../lib/workforceCost.js';
 import { BASE_LINE_OPTIONS, makeGradientFill } from '../../lib/chartTheme.js';
 import { fmtDuration } from '../../lib/theme.js';
 
@@ -121,6 +121,7 @@ export default function WorkforceOptimizer({ config, setConfig, result }) {
   const costConfig = config.costConfig || DEFAULT_COST_CONFIG;
 
   const currentCost = useMemo(() => (result ? computeCostBreakdown(result, costConfig) : null), [result, costConfig]);
+  const hoursInfo = useMemo(() => hoursPerDayBreakdown(costConfig), [costConfig]);
 
   const runOptimization = () => {
     setOptimizing(true);
@@ -152,6 +153,14 @@ export default function WorkforceOptimizer({ config, setConfig, result }) {
 
   return (
     <Card title="Workforce Cost & Optimizer" icon={Wallet}>
+      {/* Standard + overtime hours currently priced into every figure below
+          (editable in Configuration → Cost Assumptions) — shown here too so
+          the "why" behind Labor Cost is visible without leaving this panel. */}
+      <div className="mb-3 flex items-center justify-between rounded-lg border border-line bg-surface-soft px-2.5 py-2 text-[11px] font-semibold text-ink-soft">
+        <span>{hoursInfo.hoursPerDay.toFixed(1)} hrs/day standard{hoursInfo.overtimeHours > 0 && <> + <span className="text-amber-600">{hoursInfo.overtimeHours.toFixed(1)} hrs OT</span> (x{hoursInfo.otWageMultiplier})</>}</span>
+        <span className="text-ink">{hoursInfo.totalHoursPerDay.toFixed(1)} hrs/day worked</span>
+      </div>
+
       {/* Always-on: what the CURRENT configured workforce costs, over the
           run's own horizon — busy + idle always reconcile back to labor
           cost exactly, so nothing here is double-counted. */}
@@ -181,7 +190,7 @@ export default function WorkforceOptimizer({ config, setConfig, result }) {
 
       <p className="mb-3 flex items-start gap-1.5 text-[10px] leading-relaxed text-ink-faint">
         <Info size={11} className="mt-0.5 shrink-0" />
-        Over this run's {(result.horizonMinutes / 60 / 24).toFixed(0)}-day horizon. Labor Cost = blended wage x roster availability x hours. Waiting Cost prices every truck-minute spent in queue (including trucks still queued when the run ended) at an escalating rate the longer a truck waits — edit rates and tier thresholds in Configuration → Cost Assumptions.
+        Over this run's {(result.horizonMinutes / 60 / 24).toFixed(0)}-day horizon. Labor Cost = blended wage x roster availability x hours worked (standard hours at normal rate, overtime hours at x{hoursInfo.otWageMultiplier}). Waiting Cost prices every truck-minute spent in queue (including trucks still queued when the run ended) at an escalating rate the longer a truck waits — edit hours, overtime %, rates, and tier thresholds in Configuration → Cost Assumptions.
       </p>
 
       {currentCost.overWaitThreshold && (
@@ -239,7 +248,7 @@ export default function WorkforceOptimizer({ config, setConfig, result }) {
 
           <p className="mt-3 flex items-start gap-1.5 text-[10px] leading-relaxed text-ink-faint">
             <Info size={11} className="mt-0.5 shrink-0" />
-            One-pass, department-by-department search (not a full joint optimum) evaluated at a {opt.probeHorizonDays}-day probe horizon, each candidate averaged over {opt.replications} fixed random replications (seeds {opt.seeds.join(', ')}) — this system has enough variance between random draws that a single run isn't reliable enough to base a recommendation on (verified before shipping). Click a department to see its full headcount-vs-cost curve.
+            One-pass, department-by-department search (not a full joint optimum) evaluated at a {opt.probeHorizonDays}-day probe horizon, each candidate averaged over {opt.replications} fixed random replications (seeds {opt.seeds.join(', ')}) — this system has enough variance between random draws that a single run isn't reliable enough to base a recommendation on (verified before shipping). Every candidate is costed at the current {hoursInfo.totalHoursPerDay.toFixed(1)} hrs/day (standard + overtime) setting above. Click a department to see its full headcount-vs-cost curve.
           </p>
         </div>
       )}
