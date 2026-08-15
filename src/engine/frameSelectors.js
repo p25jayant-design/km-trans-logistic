@@ -383,6 +383,24 @@ export function liveFlowStats(result, t, jobId) {
  *  clip-and-sum technique desEngine.js's own final bayUtil/deptUtil
  *  calculation uses over the whole horizon (see simulate()'s comments) —
  *  just re-windowed to a single day instead of [0, horizonMinutes]. */
+/** Essential, whole-run summary for the end-of-simulation popup — the
+ *  handful of numbers a user actually wants once the full configured
+ *  horizon has finished, not the day-by-day breakdown computeDaySummary
+ *  above provides. Every figure is read directly off the engine's own
+ *  final `result.kpis` (already audited by validateSimulation) — nothing
+ *  here is recomputed or re-derived, exactly the same "read, never
+ *  re-derive" rule every other selector in this file follows. */
+export function computeFinalSummary(result) {
+  const k = result.kpis;
+  return {
+    trucksCompleted: k.completedCount,
+    trucksArrived: k.arrivedCount,
+    avgWaitingTime: k.avgWait,
+    avgFlowTime: k.avgSystem,
+    throughputPerDay: k.throughputPerDay,
+  };
+}
+
 export function computeDaySummary(result, dayIndex) {
   const dayStart = dayIndex * 1440;
   const dayEnd = Math.min((dayIndex + 1) * 1440, result.totalDuration);

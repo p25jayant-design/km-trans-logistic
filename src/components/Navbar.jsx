@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import {
-  Factory, Settings, Clock3, Activity, AlertTriangle, ListChecks, Download,
+  Truck, Settings, Clock3, Activity, AlertTriangle, ListChecks, Download,
 } from 'lucide-react';
 import Badge from './ui/Badge.jsx';
 import SimulationControls from './SimulationControls.jsx';
@@ -24,12 +24,12 @@ export default function Navbar({
     <header className="sticky top-0 z-40 border-b border-line bg-surface/95 backdrop-blur px-5 py-3 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-white shadow-card">
-            <Factory size={18} strokeWidth={2.2} />
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 text-white shadow-card">
+            <Truck size={20} strokeWidth={2.2} />
           </div>
           <div>
-            <h1 className="text-[15px] font-bold leading-tight text-ink">KM Trans Logistics — Workshop Control Center</h1>
-            <p className="text-[11.5px] text-ink-faint leading-tight">Discrete-Event Simulation · Jaipur Workshop Operations</p>
+            <h1 className="text-[17px] font-bold leading-tight text-ink">KM Trans Logistics — Workshop Control Center</h1>
+            <p className="text-[12px] text-ink-faint leading-tight">Discrete-Event Simulation · Jaipur Workshop Operations</p>
           </div>
         </div>
 

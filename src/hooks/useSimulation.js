@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { simulate, computeUtilSeries, computeFlowTimeSeries, DEFAULT_DEPTS, NATURAL_ACCIDENT_PCT } from '../engine/desEngine.js';
-import { buildFrame, buildFullKpiSeries, computeDaySummary, computeCategoryFlowTimeSeries, buildTrendsIndex } from '../engine/frameSelectors.js';
+import { buildFrame, buildFullKpiSeries, computeDaySummary, computeFinalSummary, computeCategoryFlowTimeSeries, buildTrendsIndex } from '../engine/frameSelectors.js';
 import { DEFAULT_COST_CONFIG } from '../lib/workforceCost.js';
 
 export const DEFAULT_CONFIG = {
@@ -33,6 +33,11 @@ export const SPEED_LEVELS = [
   { value: 30, label: '30 min / sec' },
   { value: 60, label: '1 hr / sec' },
   { value: 120, label: '2 hr / sec' },
+  // Default level (see `speed` state below): a standard 8-hour workday
+  // (480 simulated minutes) plays back in ~3.3 real seconds, and a full
+  // 1440-minute calendar day in ~10 real seconds — the "realistic" default
+  // pace requested, rather than the old 1-day-per-second default.
+  { value: 144, label: '~10 sec / day' },
   { value: 240, label: '4 hr / sec' },
   { value: 480, label: '8 hr / sec' },
   { value: 720, label: '12 hr / sec' },
@@ -53,7 +58,10 @@ export function useSimulation() {
   const [frame, setFrame] = useState(null);
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1440);
+  // Default playback speed: 144 sim-minutes/real-second, so one simulated
+  // (1440-minute) day takes ~10 real seconds — a much slower, more
+  // realistic default than the old 1-day-per-second pace.
+  const [speed, setSpeed] = useState(144);
   const [status, setStatus] = useState('idle'); // idle | ready | running | complete
 
   // Day-completion overlay: `dayComplete` holds { dayIndex, summary } for
@@ -67,6 +75,18 @@ export function useSimulation() {
   // "start the playthrough over".
   const [dayComplete, setDayComplete] = useState(null);
   const shownDayBoundariesRef = useRef(new Set());
+
+  // End-of-simulation popup: `finalSummary` holds the essential whole-run
+  // KPI summary the instant playback actually reaches the end of the
+  // user-selected horizon (status -> 'complete'), or null when it
+  // shouldn't show. `finalShownRef` makes sure this fires only ONCE per
+  // completed run — reaching the end via natural playback vs. Jump to End
+  // both count, but re-rendering while already complete (e.g. scrubbing
+  // around afterwards) must not re-pop it. Cleared on every fresh
+  // Run Simulation / Reset-to-day-1, same "start the playthrough over"
+  // rule shownDayBoundariesRef above follows.
+  const [finalSummary, setFinalSummary] = useState(null);
+  const finalShownRef = useRef(false);
 
   const rafRef = useRef(null);
   const lastTsRef = useRef(null);
@@ -110,8 +130,19 @@ export function useSimulation() {
     setStatus('ready');
     shownDayBoundariesRef.current = new Set();
     setDayComplete(null);
+    finalShownRef.current = false;
+    setFinalSummary(null);
     return r;
   }, [config]);
+
+  // Shared by both ways playback can reach the true end of a run (the RAF
+  // loop's own completion branch, and the explicit Jump to End control) —
+  // pops the end-of-simulation summary exactly once per completed run.
+  const showFinalSummaryIfNeeded = useCallback((r) => {
+    if (finalShownRef.current) return;
+    finalShownRef.current = true;
+    setFinalSummary(computeFinalSummary(r));
+  }, []);
 
   const play = useCallback(() => { if (result) setPlaying(true); }, [result]);
   const pause = useCallback(() => setPlaying(false), []);
@@ -124,13 +155,16 @@ export function useSimulation() {
     // — unlike scrubTo/jumpToEnd below, which only dismiss whatever overlay
     // is showing right now without resetting which days have been seen.
     shownDayBoundariesRef.current = new Set();
+    finalShownRef.current = false;
+    setFinalSummary(null);
   }, [applyTime]);
   const jumpToEnd = useCallback(() => {
     if (!result) return;
     setPlaying(false);
     applyTime(result.totalDuration);
     setStatus('complete');
-  }, [result, applyTime]);
+    showFinalSummaryIfNeeded(result);
+  }, [result, applyTime, showFinalSummaryIfNeeded]);
   const scrubTo = useCallback((fraction) => {
     if (!result) return;
     setPlaying(false);
@@ -177,6 +211,7 @@ export function useSimulation() {
         next = result.totalDuration;
         setPlaying(false);
         setStatus('complete');
+        showFinalSummaryIfNeeded(result);
       } else if (statusRef.current !== 'running') {
         setStatus('running');
       }
@@ -198,7 +233,11 @@ export function useSimulation() {
     }
     rafRef.current = requestAnimationFrame(loop);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [playing, result, speed]);
+  }, [playing, result, speed, showFinalSummaryIfNeeded]);
+
+  // Dismisses the end-of-simulation popup — purely a close action (unlike
+  // continueAfterDayComplete, there's no playback left to resume).
+  const dismissFinalSummary = useCallback(() => setFinalSummary(null), []);
 
   return {
     config, setConfig,
@@ -206,5 +245,6 @@ export function useSimulation() {
     playing, speed, setSpeed, status,
     runSimulation, play, pause, reset, jumpToEnd, scrubTo,
     dayComplete, continueAfterDayComplete,
+    finalSummary, dismissFinalSummary,
   };
 }

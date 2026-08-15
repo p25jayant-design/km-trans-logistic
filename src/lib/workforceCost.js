@@ -28,10 +28,15 @@
    spirit of abstraction the engine's own `avgSkill` service-time multiplier
    already uses.
 
-     Labor Cost (per dept)  = blendedWage x deptAvail x horizonHours
-                               ("what you pay them for being on the roster,
-                               busy or not, absenteeism already excluded via
-                               deptAvail")
+     Labor Cost (per dept)  = blendedWage x deptAvail x paidHours, where
+                               paidHours = (standard hrs/day x horizonDays)
+                               + (overtime hrs/day x horizonDays x 1.5) —
+                               see "STANDARD HOURS + OVERTIME" below. Workers
+                               are paid for the configured workday, not the
+                               full 24h the engine itself simulates around
+                               the clock ("what you pay them for being on
+                               the roster, busy or not, absenteeism already
+                               excluded via deptAvail").
      Busy Cost  (per dept)  = Labor Cost x deptUtil
                                ("the portion of that pay spent on time they
                                were actually working a job")
@@ -93,6 +98,30 @@
    editable boundaries plus fixed multipliers keeps the "Cost Assumptions"
    panel from turning into a 7-field form while still letting the user tune
    where "extended" and "severe" waits start.
+
+   STANDARD HOURS + OVERTIME (added — labor cost is now priced off an
+   actual configured workday, not a flat 24h/day)
+   ------------------------------------------------------------------------
+   The workshop runs a standard `hoursPerDay` shift (default 8h/day —
+   editable in Configuration → Cost Assumptions). `overtimePct` (0–100%,
+   default 0%) is the share of a SECOND full shift worked as overtime, so:
+
+     Overtime hours/day = (overtimePct / 100) x hoursPerDay
+     Total hours/day    = hoursPerDay + Overtime hours/day   (max 2x hoursPerDay at 100%)
+
+   Overtime hours are paid at `OT_WAGE_MULTIPLIER` (1.5x — the standard
+   "time and a half" convention) on top of the same blended wage used for
+   standard hours; nothing else about the wage model changes. This is
+   deliberately a PRICING lever only — it changes what the configured
+   workforce costs to run, exactly like the wage-rate fields beside it, and
+   does not alter deptAvail, deptUtil, or anything `simulate()` computes:
+   the DES engine has no shift/hours-per-day concept at all (it runs fully
+   continuously), so this stays firmly in workforceCost.js, same as every
+   other cost figure in this file. Because `optimizeWorkforce` below always
+   prices every candidate through `computeCostBreakdown` with the user's own
+   `costConfig`, the current standard/overtime hours setting is
+   automatically reflected in every recommendation it produces — no
+   separate wiring needed.
 
    OPTIMIZER METHODOLOGY (disclosed in the UI, not just here)
    ------------------------------------------------------------
@@ -167,7 +196,46 @@ export const DEFAULT_COST_CONFIG = {
   // driver, which in this model almost always means too few bays/workers
   // for the current demand. Editable.
   waitCostWarnPct: 25,
+  // Standard paid workday, in hours — see "STANDARD HOURS + OVERTIME"
+  // above. Editable; used to price Labor Cost instead of a flat 24h/day.
+  hoursPerDay: 8,
+  // Overtime worked, as a % (0-100) of a second full `hoursPerDay` shift —
+  // e.g. 50% at hoursPerDay=8 means 4 extra hours/day. Defaults to 0 (no
+  // overtime), same "off unless the user opts in" convention as
+  // accidentPct elsewhere in this app.
+  overtimePct: 0,
 };
+
+// Overtime pay premium — the standard "time and a half" convention, fixed
+// and disclosed (same convention as the x2/x4 wait-cost escalation
+// multipliers below) rather than a further editable field, to keep the
+// Cost Assumptions panel from growing past what's actually needed.
+const OT_WAGE_MULTIPLIER = 1.5;
+
+/** Overtime hours worked per day at the current costConfig setting — see
+ *  "STANDARD HOURS + OVERTIME" in the file header. */
+export function overtimeHoursPerDay(costConfig) {
+  const hoursPerDay = Math.max(0, costConfig.hoursPerDay ?? 8);
+  const pct = Math.min(100, Math.max(0, costConfig.overtimePct ?? 0));
+  return (pct / 100) * hoursPerDay;
+}
+
+/** Standard + overtime hours worked per day at the current costConfig
+ *  setting, plus the pieces that made it up — powers both the ConfigPanel
+ *  readout ("35% -> 2.8 hrs overtime, 10.8 hrs/day total") and the
+ *  optimizer panel's disclosure of what it priced candidates against. */
+export function hoursPerDayBreakdown(costConfig) {
+  const hoursPerDay = Math.max(0, costConfig.hoursPerDay ?? 8);
+  const overtimePct = Math.min(100, Math.max(0, costConfig.overtimePct ?? 0));
+  const overtimeHours = overtimeHoursPerDay(costConfig);
+  return {
+    hoursPerDay,
+    overtimePct,
+    overtimeHours,
+    totalHoursPerDay: hoursPerDay + overtimeHours,
+    otWageMultiplier: OT_WAGE_MULTIPLIER,
+  };
+}
 
 // Fixed comparison-seed set used for every candidate in an optimizer sweep
 // (see "REPLICATION" in the file header for why 6 fixed seeds are averaged
@@ -258,20 +326,31 @@ export function computeWaitCostBreakdown(result, costConfig) {
  *  by the assumed wage/wait rates, it never recomputes utilization, busy
  *  time, or anything else the engine is responsible for. */
 export function computeCostBreakdown(result, costConfig) {
-  const horizonHours = result.horizonMinutes / 60;
+  const horizonDays = result.horizonMinutes / 1440;
+  const hours = hoursPerDayBreakdown(costConfig);
+  const regularHours = hours.hoursPerDay * horizonDays;
+  const overtimeHours = hours.overtimeHours * horizonDays;
+  // Overtime hours cost more per hour (OT_WAGE_MULTIPLIER) but still count
+  // as real hours worked for the "hours worked" readout — kept separate
+  // from `horizonHours` (paid-equivalent hours, used for the total Rs
+  // figure) so the UI can show both without recomputing either.
+  const horizonHours = regularHours + overtimeHours;
   const perDept = {};
-  let laborCostTotal = 0, idleCostTotal = 0, busyCostTotal = 0;
+  let laborCostTotal = 0, idleCostTotal = 0, busyCostTotal = 0, otCostTotal = 0;
 
   DEPT_KEYS.forEach((k) => {
     const dept = result.cfg.departments[k];
     const wage = blendedWage(dept, costConfig);
     const avail = result.deptAvail[k] || 0;
     const util = result.kpis.deptUtil[k] || 0;
-    const laborCost = wage * avail * horizonHours;
+    const regularCost = wage * avail * regularHours;
+    const otCost = wage * avail * overtimeHours * hours.otWageMultiplier;
+    const laborCost = regularCost + otCost;
     const busyCost = laborCost * util;
     const idleCost = laborCost - busyCost;
-    perDept[k] = { key: k, name: DEPT_NAMES[k], wage, avail, util, laborCost, busyCost, idleCost };
+    perDept[k] = { key: k, name: DEPT_NAMES[k], wage, avail, util, regularCost, otCost, laborCost, busyCost, idleCost };
     laborCostTotal += laborCost;
+    otCostTotal += otCost;
     busyCostTotal += busyCost;
     idleCostTotal += idleCost;
   });
@@ -286,6 +365,7 @@ export function computeCostBreakdown(result, costConfig) {
   return {
     perDept,
     laborCostTotal,
+    otCostTotal,
     busyCostTotal,
     idleCostTotal,
     waitMinutes,
@@ -296,6 +376,8 @@ export function computeCostBreakdown(result, costConfig) {
     waitCostWarnPct: warnPct,
     totalCost,
     horizonHours,
+    horizonDays,
+    hours,
   };
 }
 

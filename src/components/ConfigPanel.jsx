@@ -3,7 +3,7 @@ import { Settings, Warehouse, Users, Timer, Dices, LayoutList, Truck, AlertTrian
 import Card from './ui/Card.jsx';
 import Panel from './ui/Panel.jsx';
 import { DEPT_KEYS, DEPT_NAMES, NATURAL_ACCIDENT_PCT } from '../engine/desEngine.js';
-import { DEFAULT_COST_CONFIG } from '../lib/workforceCost.js';
+import { DEFAULT_COST_CONFIG, hoursPerDayBreakdown } from '../lib/workforceCost.js';
 
 function Field({ label, children }) {
   return (
@@ -31,11 +31,21 @@ export default function ConfigPanel({ config, setConfig }) {
       },
     }));
   const costConfig = config.costConfig || DEFAULT_COST_CONFIG;
+  const hoursInfo = hoursPerDayBreakdown(costConfig);
   const updateCost = (field, val) => {
     const n = Number(val);
     setConfig((c) => ({
       ...c,
       costConfig: { ...(c.costConfig || DEFAULT_COST_CONFIG), [field]: Number.isFinite(n) && n >= 0 ? n : 0 },
+    }));
+  };
+  // Overtime % is a 0-100 range (see hoursPerDayBreakdown in workforceCost.js)
+  // — clamped explicitly rather than reusing updateCost's plain >=0 clamp.
+  const setOvertimePct = (val) => {
+    const n = Number(val);
+    setConfig((c) => ({
+      ...c,
+      costConfig: { ...(c.costConfig || DEFAULT_COST_CONFIG), overtimePct: Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0 },
     }));
   };
 
@@ -228,6 +238,25 @@ export default function ConfigPanel({ config, setConfig }) {
           <Field label="High Rs/hr"><input type="number" min={0} className={inputCls} value={costConfig.wageHigh} onChange={(e) => updateCost('wageHigh', e.target.value)} /></Field>
           <Field label="Med Rs/hr"><input type="number" min={0} className={inputCls} value={costConfig.wageMed} onChange={(e) => updateCost('wageMed', e.target.value)} /></Field>
           <Field label="Low Rs/hr"><input type="number" min={0} className={inputCls} value={costConfig.wageLow} onChange={(e) => updateCost('wageLow', e.target.value)} /></Field>
+        </div>
+        <div className="mt-2 rounded-lg border border-line bg-surface-soft p-2.5">
+          <div className="grid grid-cols-2 gap-1.5">
+            <Field label="Standard hrs/day"><input type="number" min={1} max={24} className={inputCls} value={costConfig.hoursPerDay ?? 8} onChange={(e) => updateCost('hoursPerDay', e.target.value)} /></Field>
+            <Field label="Overtime %">
+              <input
+                type="range" min={0} max={100} step={1}
+                value={hoursInfo.overtimePct}
+                onChange={(e) => setOvertimePct(e.target.value)}
+                className="mt-1.5 w-full accent-brand-600"
+              />
+            </Field>
+          </div>
+          <p className="mt-1.5 text-[11px] font-semibold text-ink-soft">
+            {hoursInfo.overtimePct}% overtime → <span className="text-amber-600">{hoursInfo.overtimeHours.toFixed(1)} hrs</span> extra/day · <span className="text-ink">{hoursInfo.totalHoursPerDay.toFixed(1)} hrs/day</span> worked total
+          </p>
+          <p className="mt-1 text-[10px] text-ink-faint">
+            Labor cost is priced off standard hours at the normal wage plus overtime hours at {hoursInfo.otWageMultiplier}x ("time and a half"). Default 0% overtime = {costConfig.hoursPerDay ?? 8} hrs/day only.
+          </p>
         </div>
         <div className="mt-1.5">
           <Field label="Wait cost (Rs/truck-minute)"><input type="number" min={0} step={0.5} className={inputCls} value={costConfig.waitCostPerMin} onChange={(e) => updateCost('waitCostPerMin', e.target.value)} /></Field>
