@@ -73,7 +73,7 @@ export default function ChartsPanel({ result, frame }) {
     if (!result || !frame || !categoryDepartures) return null;
     const sampleTimes = result.util.sampleTimes;
     const idx = Math.max(0, Math.min(sampleTimes.length - 1, countLE(sampleTimes, frame.t)));
-    const labels = sampleTimes.map(t => (t / 1440).toFixed(1));
+    const labels = sampleTimes.map(t => (t / (result.dayMinutes || 1440)).toFixed(1));
 
     const queueSeries = sampleTimes.map((t) => {
       const times = result.snapTimes;

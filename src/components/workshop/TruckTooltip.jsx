@@ -42,7 +42,7 @@ export default function TruckTooltip({ anchorRect, details }) {
           <div className="mb-1.5 truncate text-[11.5px] font-bold text-ink">
             #{details.truckId} · {details.jobName}
           </div>
-          <Row icon={CalendarClock} label="Arrival Time" value={fmtTime(details.arrivalTime)} />
+          <Row icon={CalendarClock} label="Arrival Time" value={fmtTime(details.arrivalTime, details.dayMinutes)} />
           <Row icon={Hourglass} label="Waiting Time" value={fmtMinutesShort(details.waitTime)} />
           <Row
             icon={Users}
@@ -57,7 +57,7 @@ export default function TruckTooltip({ anchorRect, details }) {
           <Row
             icon={FlagTriangleRight}
             label="Expected Completion"
-            value={details.expectedCompletion != null ? fmtTime(details.expectedCompletion) : 'Pending allocation'}
+            value={details.expectedCompletion != null ? fmtTime(details.expectedCompletion, details.dayMinutes) : 'Pending allocation'}
           />
         </motion.div>
       )}

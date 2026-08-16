@@ -16,9 +16,12 @@ const TREND_STYLE = {
   flat: { icon: Minus, cls: 'text-ink-faint bg-slate-100' },
 };
 
-/** Compact "HH:MM" clock label — used for the fine, recent-activity view. */
-function clockLabel(t) {
-  const mm = Math.floor(t % 1440);
+/** Compact "HH:MM" clock label — used for the fine, recent-activity view.
+ *  `dayMinutes` (the run's own standard+overtime shop-day length) is what
+ *  the clock wraps around at, matching the live clock elsewhere. */
+function clockLabel(t, dayMinutes = 1440) {
+  const dm = dayMinutes > 0 ? dayMinutes : 1440;
+  const mm = Math.floor(t % dm);
   const hh = Math.floor(mm / 60);
   const min = Math.floor(mm % 60);
   return `${String(hh).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
@@ -27,8 +30,8 @@ function clockLabel(t) {
 /** "Day N.n" label — used for the zoomed-out, full-run view, matching the
  *  day-scale x-axis convention every other full-horizon chart in the app
  *  already uses (ChartsPanel, Bay/Worker Utilization pages). */
-function dayLabel(t) {
-  return `${(t / 1440).toFixed(1)}d`;
+function dayLabel(t, dayMinutes = 1440) {
+  return `${(t / (dayMinutes > 0 ? dayMinutes : 1440)).toFixed(1)}d`;
 }
 
 function buildChartData({ series, labels, color, label }) {
@@ -61,7 +64,7 @@ function buildChartData({ series, labels, color, label }) {
  *  Both views come from data the engine already produced (buildTrends /
  *  buildFullKpiSeries) — this only changes which precomputed series is
  *  currently on screen. */
-export default function KpiCard({ id, icon: Icon, label, value, decimals = 0, suffix = '', trend = [], times = [], fullSeries = [], fullTimes = [], color = '#2563eb', yAxisLabel = '', onInfoClick }) {
+export default function KpiCard({ id, icon: Icon, label, value, decimals = 0, suffix = '', trend = [], times = [], fullSeries = [], fullTimes = [], color = '#2563eb', yAxisLabel = '', onInfoClick, dayMinutes = 1440 }) {
   const [expanded, setExpanded] = useState(false);
   const [view, setView] = useState('recent'); // 'recent' | 'full'
   const chartAreaRef = useRef(null);
@@ -112,8 +115,8 @@ export default function KpiCard({ id, icon: Icon, label, value, decimals = 0, su
   const showingFull = view === 'full' && canZoomOut;
   const chartData = canExpand ? (
     showingFull
-      ? buildChartData({ series: fullSeries, labels: fullTimes.map(dayLabel), color, label })
-      : buildChartData({ series: trend, labels: times.length === trend.length ? times.map(clockLabel) : trend.map((_, i) => i), color, label })
+      ? buildChartData({ series: fullSeries, labels: fullTimes.map((t) => dayLabel(t, dayMinutes)), color, label })
+      : buildChartData({ series: trend, labels: times.length === trend.length ? times.map((t) => clockLabel(t, dayMinutes)) : trend.map((_, i) => i), color, label })
   ) : null;
 
   // Explicit axis titles for the expanded chart — the X-axis always plots

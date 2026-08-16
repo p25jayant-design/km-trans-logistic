@@ -135,9 +135,18 @@ class MinHeap {
   }
 }
 
-export function fmtTime(minutes) {
-  const day = Math.floor(minutes / 1440) + 1;
-  const hh = Math.floor((minutes % 1440) / 60);
+/** Formats a raw simulated-minute timestamp as "Day N · HH:MM". `dayMinutes`
+ *  is the length of one simulated working day (standard + overtime hours,
+ *  in minutes — see `simulate()`'s own `dayMinutes` below); it defaults to
+ *  1440 (a plain 24h calendar day) only for callers that don't have a
+ *  `result` in scope to pass the run's actual value — every caller that
+ *  does should pass `result.dayMinutes` so "Day N" here always matches the
+ *  same day boundary the live clock, Day-Complete overlay, and horizon are
+ *  computed against. */
+export function fmtTime(minutes, dayMinutes = 1440) {
+  const dm = dayMinutes > 0 ? dayMinutes : 1440;
+  const day = Math.floor(minutes / dm) + 1;
+  const hh = Math.floor((minutes % dm) / 60);
   const mm = Math.floor(minutes % 60);
   const pad = n => String(n).padStart(2, '0');
   return `Day ${day} · ${pad(hh)}:${pad(mm)}`;
@@ -154,6 +163,27 @@ export function simulate(cfg) {
     if (u < fc) return a + Math.sqrt(u * (c - a) * (b - a));
     return c - Math.sqrt((1 - u) * (c - a) * (c - b));
   };
+
+  // Length of one simulated working day, in minutes — the shop's standard
+  // hours/day plus overtime hours (see workforceCost.js's
+  // hoursPerDayBreakdown, which computes this exact same formula for
+  // pricing; kept in sync here since "how many hours the shop actually
+  // works each day" is now also a real capacity input, not just a cost
+  // input). Read from cfg.costConfig (already threaded into every cfg
+  // object simulate() is called with — see useSimulation.js / DEFAULT_CONFIG
+  // / workforceCost.js's optimizer sweep), defaulting to 8h/0% overtime
+  // (480 min/day) if costConfig is missing entirely, matching
+  // DEFAULT_COST_CONFIG. This ONLY changes what counts as "one day" for
+  // scheduling arrivals and reporting the horizon/clock below — every
+  // service-time formula, bay/department allocation rule, and KPI
+  // calculation elsewhere in this function is completely unaware this
+  // exists (they all already key off `horizonMinutes`, never a hardcoded
+  // 1440, so they stay correct automatically once horizonMinutes itself is
+  // redefined in terms of dayMinutes below).
+  const cc = cfg.costConfig || {};
+  const shiftHoursPerDay = Math.max(0.1, cc.hoursPerDay ?? 8);
+  const shiftOvertimePct = Math.min(100, Math.max(0, cc.overtimePct ?? 0));
+  const dayMinutes = (shiftHoursPerDay + (shiftOvertimePct / 100) * shiftHoursPerDay) * 60;
 
   const deptAvail = {}, deptSkillMult = {};
   DEPT_KEYS.forEach(k => {
@@ -178,7 +208,7 @@ export function simulate(cfg) {
   // whichever trucks happen to be in a `completed` filter at report time.
   const deptIntervals = {}; DEPT_KEYS.forEach(k => deptIntervals[k] = []);
 
-  const horizonMinutes = cfg.horizonDays * 1440;
+  const horizonMinutes = cfg.horizonDays * dayMinutes;
   const trucks = [];
   const queue = [];
   const FEL = new MinHeap();
@@ -268,10 +298,16 @@ export function simulate(cfg) {
     // single combined pool event below instead of their own individual
     // stream — everything else keeps its own untouched independent stream.
     if (job.id === 'accident' || job.category === 'standard') return;
-    const rate = job.arrivalPerDay / 1440;
+    // Arrival rate is per SHOP DAY (dayMinutes), not per 24 real hours — the
+    // same daily arrival volume (`arrivalPerDay`, an unchanged catalog
+    // constant) now arrives compressed into however many hours the shop is
+    // actually open each day, exactly like trucks would only show up during
+    // business hours in reality. This is the only place daily arrival
+    // volume is affected by the standard/overtime hours setting.
+    const rate = job.arrivalPerDay / dayMinutes;
     if (rate > 0) FEL.push({ time: exponential(rate), type: 'arrival', payload: { jobId: job.id } });
   });
-  const poolRatePerMin = ACCIDENT_STANDARD_POOL_RATE / 1440;
+  const poolRatePerMin = ACCIDENT_STANDARD_POOL_RATE / dayMinutes;
   if (poolRatePerMin > 0) FEL.push({ time: exponential(poolRatePerMin), type: 'arrival', payload: { pool: true } });
 
   const SAFETY_LIMIT = 400000;
@@ -293,7 +329,7 @@ export function simulate(cfg) {
         rate = poolRatePerMin;
       } else {
         job = JOB_TYPES.find(j => j.id === ev.payload.jobId);
-        rate = job.arrivalPerDay / 1440;
+        rate = job.arrivalPerDay / dayMinutes;
       }
       if (t <= horizonMinutes) {
         const vehicleType = uniform() < cfg.carCarrierPct ? 'Car Carrier' : 'Flatbed Carrier';
@@ -480,7 +516,17 @@ export function simulate(cfg) {
     cfg, trucks, baySlots, deptIntervals, snapshots, eventsLog, deptAvail,
     arrivalsSorted, departuresSorted, snapTimes, startEvents, startTimes,
     horizonMinutes,
-    totalDuration: totalT,
+    dayMinutes,
+    // Playback/reporting stop point: capped at horizonMinutes even though
+    // the FEL loop above keeps running past it internally to drain
+    // in-progress jobs to a real completion (so every KPI clipped to
+    // horizonMinutes above — bayUtil, deptUtil, avgQueue — stays exactly as
+    // accurate as before). What's EXPOSED as "the end of the run" for
+    // playback, the scrub bar, chart x-axes, and Jump-to-End now stops
+    // right at the configured horizon instead of running on into that
+    // drain tail, per the explicit ask that the simulation stop "just when
+    // the total horizon days are over".
+    totalDuration: Math.min(totalT, horizonMinutes),
     kpis: { avgWait, avgSystem, delayProb, throughputPerDay, maxQueue, avgQueue, completedCount: completed.length, arrivedCount: trucks.length, bayUtil, bayUtilBySlot, deptUtil }
   };
   result.validation = validateSimulation(result);

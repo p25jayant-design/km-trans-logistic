@@ -36,7 +36,7 @@ export default function BayUtilizationPage({ result, frame }) {
   const seriesInfo = selected ? result.util.baySlotSeries[selected] : null;
   const sampleTimes = result.util.sampleTimes;
   const idx = Math.max(0, Math.min(sampleTimes.length - 1, countLE(sampleTimes, frame.t)));
-  const labels = sampleTimes.map((t) => (t / 1440).toFixed(1));
+  const labels = sampleTimes.map((t) => (t / (result.dayMinutes || 1440)).toFixed(1));
 
   const activeJob = slot ? activeIntervalAt(slot.intervals, frame.t) : null;
   const cumulativeUtilNow = seriesInfo ? seriesInfo.series[idx] : 0;

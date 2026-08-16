@@ -232,7 +232,7 @@ export default function ConfigPanel({ config, setConfig }) {
           <IndianRupee size={13} /> Cost Assumptions
         </div>
         <p className="mb-2 text-[10px] text-ink-faint">
-          Used by the Workforce Cost &amp; Optimizer panel only — has no effect on the simulation itself. Rs/hour per skill tier, and the assumed cost of one truck-minute spent waiting.
+          Rs/hour per skill tier, and the assumed cost of one truck-minute spent waiting — priced by the Workforce Cost &amp; Optimizer panel, no effect on the simulation itself. Standard hrs/day and Overtime % below are the exception: they also set how many hours the shop is actually open each simulated day.
         </p>
         <div className="grid grid-cols-3 gap-1.5">
           <Field label="High Rs/hr"><input type="number" min={0} className={inputCls} value={costConfig.wageHigh} onChange={(e) => updateCost('wageHigh', e.target.value)} /></Field>
@@ -255,7 +255,7 @@ export default function ConfigPanel({ config, setConfig }) {
             {hoursInfo.overtimePct}% overtime → <span className="text-amber-600">{hoursInfo.overtimeHours.toFixed(1)} hrs</span> extra/day · <span className="text-ink">{hoursInfo.totalHoursPerDay.toFixed(1)} hrs/day</span> worked total
           </p>
           <p className="mt-1 text-[10px] text-ink-faint">
-            Labor cost is priced off standard hours at the normal wage plus overtime hours at {hoursInfo.otWageMultiplier}x ("time and a half"). Default 0% overtime = {costConfig.hoursPerDay ?? 8} hrs/day only.
+            The shop only takes in trucks during these hours each simulated day, and the horizon stops after the configured number of days — labor cost is priced off standard hours at the normal wage plus overtime hours at {hoursInfo.otWageMultiplier}x ("time and a half"). Default 0% overtime = {costConfig.hoursPerDay ?? 8} hrs/day only.
           </p>
         </div>
         <div className="mt-1.5">

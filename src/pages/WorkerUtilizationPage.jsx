@@ -28,7 +28,7 @@ export default function WorkerUtilizationPage({ result, frame }) {
 
   const sampleTimes = result.util.sampleTimes;
   const idx = Math.max(0, Math.min(sampleTimes.length - 1, countLE(sampleTimes, frame.t)));
-  const labels = sampleTimes.map((t) => (t / 1440).toFixed(1));
+  const labels = sampleTimes.map((t) => (t / (result.dayMinutes || 1440)).toFixed(1));
   const series = result.util.deptSeries[selected] || [];
   const cumulativeUtilNow = series.length ? series[idx] : 0;
 

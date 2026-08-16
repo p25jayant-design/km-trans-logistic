@@ -19,7 +19,7 @@ const KIND_META = {
 };
 const FALLBACK_META = { icon: Settings2, tone: 'text-slate-500', bg: 'bg-slate-100', stripe: 'border-l-slate-300' };
 
-function EventRow({ event, isNewest }) {
+function EventRow({ event, isNewest, dayMinutes }) {
   const meta = KIND_META[event.kind] || FALLBACK_META;
   const Icon = meta.icon;
   return (
@@ -36,7 +36,7 @@ function EventRow({ event, isNewest }) {
         <Icon size={13} />
       </span>
       <span className="w-[108px] shrink-0 whitespace-nowrap font-mono text-[10.5px] tabular-nums text-ink-faint">
-        {fmtTime(event.t)}
+        {fmtTime(event.t, dayMinutes)}
       </span>
       <span className="w-[54px] shrink-0 whitespace-nowrap rounded-full bg-slate-100 px-1.5 py-0.5 text-center font-mono text-[10px] font-bold tabular-nums text-ink-soft">
         #{event.truckId ?? '—'}
@@ -104,7 +104,7 @@ export default function EventTimeline({ result, frame }) {
         <div ref={scrollRef} className="h-[260px] overflow-y-auto rounded-b-xl border-t border-line bg-white font-mono">
           <AnimatePresence initial={false}>
             {events.map((event, i) => (
-              <EventRow key={event.key} event={event} isNewest={i === events.length - 1} />
+              <EventRow key={event.key} event={event} isNewest={i === events.length - 1} dayMinutes={result?.dayMinutes} />
             ))}
           </AnimatePresence>
         </div>
