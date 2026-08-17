@@ -54,8 +54,8 @@ export default function App() {
   const {
     config, setConfig, result, frame, t,
     playing, speed, setSpeed, status,
-    runSimulation, play, pause, reset, jumpToEnd, scrubTo,
-    dayComplete, continueAfterDayComplete,
+    runSimulation, play, pause, reset, jumpToEnd, scrubTo, abort,
+    dayComplete, continueAfterDayComplete, dismissDayCompletePaused,
     finalSummary, dismissFinalSummary,
   } = useSimulation();
 
@@ -71,6 +71,10 @@ export default function App() {
   const handleReset = () => {
     if (!result) return;
     if (window.confirm('Reset playback to Day 1? Your configuration will be kept.')) reset();
+  };
+  const handleAbort = () => {
+    if (status === 'idle') return;
+    if (window.confirm('Abort the simulation? The current run will be discarded and playback stopped. Your configuration will be kept.')) abort();
   };
   const handlePlayPause = () => {
     if (!result) { handleRun(); return; }
@@ -90,6 +94,7 @@ export default function App() {
         onJumpEnd={jumpToEnd}
         onReset={handleReset}
         onRun={handleRun}
+        onAbort={handleAbort}
         speed={speed}
         onSpeedChange={setSpeed}
         eventCount={eventCount}
@@ -100,7 +105,7 @@ export default function App() {
 
       <BootOverlay open={booting} config={config} onDone={handleBootDone} />
 
-      <DayCompleteOverlay dayComplete={dayComplete} onContinue={continueAfterDayComplete} />
+      <DayCompleteOverlay dayComplete={dayComplete} onContinue={continueAfterDayComplete} onDismissPaused={dismissDayCompletePaused} />
 
       <FinalSummaryOverlay finalSummary={finalSummary} onClose={dismissFinalSummary} horizonDays={config.horizonDays} />
 

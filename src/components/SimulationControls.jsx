@@ -1,13 +1,13 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { PlayCircle, PauseCircle, SkipForward, RotateCcw, Gauge } from 'lucide-react';
+import { PlayCircle, PauseCircle, SkipForward, RotateCcw, Gauge, OctagonX } from 'lucide-react';
 import { SPEED_LEVELS } from '../hooks/useSimulation.js';
 
 /** Playback transport: speed slider + play/pause + jump-to-end + reset +
- *  run button. Pulled out of Navbar so the transport can be reused or
- *  relaid-out independently of the top bar's branding/status area. */
+ *  run button + abort. Pulled out of Navbar so the transport can be reused
+ *  or relaid-out independently of the top bar's branding/status area. */
 export default function SimulationControls({
-  playing, onPlayPause, onJumpEnd, onReset, onRun, speed, onSpeedChange,
+  playing, onPlayPause, onJumpEnd, onReset, onRun, onAbort, speed, onSpeedChange,
 }) {
   const speedIndex = SPEED_LEVELS.findIndex((s) => s.value === speed);
   const currentIndex = speedIndex >= 0 ? speedIndex : Math.round(SPEED_LEVELS.length / 2);
@@ -64,6 +64,16 @@ export default function SimulationControls({
         className="flex items-center gap-1.5 rounded-lg border border-brand-600 bg-brand-50 px-3 py-1.5 text-[12.5px] font-semibold text-brand-700 transition-colors hover:bg-brand-100"
       >
         Run Simulation
+      </motion.button>
+
+      <motion.button
+        whileHover={{ scale: 1.03 }}
+        whileTap={{ scale: 0.96 }}
+        onClick={onAbort}
+        title="Stop and reset everything — your configuration is kept, but the current run is discarded"
+        className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-[12.5px] font-semibold text-white shadow-card transition-colors hover:bg-red-700"
+      >
+        <OctagonX size={15} /> Abort
       </motion.button>
     </div>
   );

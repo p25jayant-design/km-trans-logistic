@@ -98,6 +98,25 @@ const ACCIDENT_STANDARD_POOL_RATE = STANDARD_POOL_RATE + ACCIDENT_BASE_RATE; // 
  *  previously implicit. */
 export const NATURAL_ACCIDENT_PCT = ACCIDENT_BASE_RATE / ACCIDENT_STANDARD_POOL_RATE;
 
+/** Resolves ONE job's effective arrivalPerDay/baseService for this run —
+ *  `cfg.jobOverrides[job.id]` (if present and a valid positive number) wins,
+ *  otherwise falls back to the JOB_TYPES catalog value (the case/Exhibit-5
+ *  default — see the JOB_TYPES comment above). Returns a shallow-copied
+ *  object; NEVER mutates the shared catalog entry, so JOB_TYPES itself
+ *  always still reflects the true, unedited case defaults for any other
+ *  code (or a future run) that reads it. This is the ONLY place demand
+ *  (arrival rate) / processing time (service time) overrides are applied —
+ *  every line downstream of "which job did this truck get" (vehicle-type
+ *  draw, triangular service-time formula, routing, allocation, KPIs) reads
+ *  `job.arrivalPerDay`/`job.baseService` off whatever object was resolved
+ *  here and is otherwise completely unaware overrides exist. */
+function effectiveJob(job, cfg) {
+  const ov = cfg.jobOverrides?.[job.id];
+  const arrivalPerDay = ov && Number.isFinite(ov.arrivalPerDay) && ov.arrivalPerDay >= 0 ? ov.arrivalPerDay : job.arrivalPerDay;
+  const baseService = ov && Number.isFinite(ov.baseService) && ov.baseService > 0 ? ov.baseService : job.baseService;
+  return arrivalPerDay === job.arrivalPerDay && baseService === job.baseService ? job : { ...job, arrivalPerDay, baseService };
+}
+
 export function mulberry32(a) {
   return function () {
     a |= 0; a = a + 0x6D2B79F5 | 0;
@@ -184,6 +203,23 @@ export function simulate(cfg) {
   const shiftHoursPerDay = Math.max(0.1, cc.hoursPerDay ?? 8);
   const shiftOvertimePct = Math.min(100, Math.max(0, cc.overtimePct ?? 0));
   const dayMinutes = (shiftHoursPerDay + (shiftOvertimePct / 100) * shiftHoursPerDay) * 60;
+
+  // Effective per-job arrival rate / service time for THIS run — see
+  // effectiveJob() above. Recomputed here (not module-level) because it
+  // depends on cfg.jobOverrides, which can differ from run to run (e.g. the
+  // Workforce Optimizer's probe sweep passes the user's own costConfig/
+  // jobOverrides unchanged through every candidate — see workforceCost.js).
+  // The Accident/Standard pooled-arrival totals (EFF_STANDARD_POOL_RATE
+  // etc.) are likewise recomputed from these EFFECTIVE rates, not the fixed
+  // catalog constants above, so an override to e.g. one Standard job's
+  // demand correctly changes both its own arrival rate AND that job's share
+  // of the pool it's drawn from.
+  const EFF_JOB_TYPES = JOB_TYPES.map((j) => effectiveJob(j, cfg));
+  const EFF_BY_ID = {}; EFF_JOB_TYPES.forEach((j) => { EFF_BY_ID[j.id] = j; });
+  const EFF_STANDARD_JOBS = EFF_JOB_TYPES.filter((j) => j.category === 'standard');
+  const EFF_ACCIDENT_JOB = EFF_BY_ID.accident;
+  const EFF_STANDARD_POOL_RATE = EFF_STANDARD_JOBS.reduce((s, j) => s + j.arrivalPerDay, 0);
+  const EFF_ACCIDENT_STANDARD_POOL_RATE = EFF_STANDARD_POOL_RATE + EFF_ACCIDENT_JOB.arrivalPerDay;
 
   const deptAvail = {}, deptSkillMult = {};
   DEPT_KEYS.forEach(k => {
@@ -284,30 +320,29 @@ export function simulate(cfg) {
   // don't share (and don't bias) the same random number.
   const accidentPct = Math.min(1, Math.max(0, cfg.accidentPct ?? NATURAL_ACCIDENT_PCT));
   let standardCumWeight = 0;
-  const standardCumWeights = STANDARD_JOBS.map((j) => (standardCumWeight += j.arrivalPerDay));
+  const standardCumWeights = EFF_STANDARD_JOBS.map((j) => (standardCumWeight += j.arrivalPerDay));
   function pickStandardJob() {
-    const u = uniform() * STANDARD_POOL_RATE;
-    for (let i = 0; i < STANDARD_JOBS.length; i++) {
-      if (u <= standardCumWeights[i]) return STANDARD_JOBS[i];
+    const u = uniform() * EFF_STANDARD_POOL_RATE;
+    for (let i = 0; i < EFF_STANDARD_JOBS.length; i++) {
+      if (u <= standardCumWeights[i]) return EFF_STANDARD_JOBS[i];
     }
-    return STANDARD_JOBS[STANDARD_JOBS.length - 1];
+    return EFF_STANDARD_JOBS[EFF_STANDARD_JOBS.length - 1];
   }
 
-  JOB_TYPES.forEach(job => {
+  EFF_JOB_TYPES.forEach(job => {
     // Accident Repair and every Standard-category job are seeded from the
     // single combined pool event below instead of their own individual
     // stream — everything else keeps its own untouched independent stream.
     if (job.id === 'accident' || job.category === 'standard') return;
     // Arrival rate is per SHOP DAY (dayMinutes), not per 24 real hours — the
-    // same daily arrival volume (`arrivalPerDay`, an unchanged catalog
-    // constant) now arrives compressed into however many hours the shop is
-    // actually open each day, exactly like trucks would only show up during
-    // business hours in reality. This is the only place daily arrival
-    // volume is affected by the standard/overtime hours setting.
+    // same daily arrival volume (`arrivalPerDay` — the case default, or the
+    // user's own override, see effectiveJob() above) now arrives compressed
+    // into however many hours the shop is actually open each day, exactly
+    // like trucks would only show up during business hours in reality.
     const rate = job.arrivalPerDay / dayMinutes;
     if (rate > 0) FEL.push({ time: exponential(rate), type: 'arrival', payload: { jobId: job.id } });
   });
-  const poolRatePerMin = ACCIDENT_STANDARD_POOL_RATE / dayMinutes;
+  const poolRatePerMin = EFF_ACCIDENT_STANDARD_POOL_RATE / dayMinutes;
   if (poolRatePerMin > 0) FEL.push({ time: exponential(poolRatePerMin), type: 'arrival', payload: { pool: true } });
 
   const SAFETY_LIMIT = 400000;
@@ -325,10 +360,10 @@ export function simulate(cfg) {
       // formula keyed off job.category, same routing/allocation/queueing.
       let job, rate;
       if (ev.payload.pool) {
-        job = uniform() < accidentPct ? ACCIDENT_JOB : pickStandardJob();
+        job = uniform() < accidentPct ? EFF_ACCIDENT_JOB : pickStandardJob();
         rate = poolRatePerMin;
       } else {
-        job = JOB_TYPES.find(j => j.id === ev.payload.jobId);
+        job = EFF_BY_ID[ev.payload.jobId];
         rate = job.arrivalPerDay / dayMinutes;
       }
       if (t <= horizonMinutes) {

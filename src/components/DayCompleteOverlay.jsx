@@ -6,7 +6,7 @@ import StatTile from './ui/StatTile.jsx';
 import { fmtDuration } from '../lib/theme.js';
 import { bottleneckColorFor } from '../lib/styleMaps.js';
 
-const AUTO_RESUME_SECONDS = 6;
+const AUTO_RESUME_SECONDS = 3;
 const CONFETTI_COLORS = ['#2563eb', '#059669', '#ea580c', '#7c3aed', '#d97706', '#db2777'];
 
 /** A small, fixed set of confetti pieces flung outward from center on
@@ -42,11 +42,20 @@ function useConfettiPieces(seed) {
  *  throughput, bay/worker utilization, and that day's own bottleneck — with
  *  a brief confetti burst, then either auto-resumes playback after a short
  *  countdown or waits for the user to continue manually, whichever the
- *  user prefers (the countdown itself can be paused). */
-export default function DayCompleteOverlay({ dayComplete, onContinue }) {
+ *  user prefers (the countdown itself can be paused). Two ways out: the
+ *  "Continue" button (and the auto-resume timer) RESUME playback; clicking
+ *  the backdrop outside the dialog instead just closes it, leaving playback
+ *  paused exactly where it is so the user can look at the screen themselves.
+ *  A "Do not show me again" checkbox suppresses this overlay for every
+ *  later day boundary in the current run (see useSimulation.js's
+ *  skipDayCompleteRef) — future days then start immediately, no pause. */
+export default function DayCompleteOverlay({ dayComplete, onContinue, onDismissPaused }) {
   const [secondsLeft, setSecondsLeft] = useState(AUTO_RESUME_SECONDS);
   const [autoResume, setAutoResume] = useState(true);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
   const intervalRef = useRef(null);
+  const dontShowAgainRef = useRef(false);
+  dontShowAgainRef.current = dontShowAgain;
 
   const dayIndex = dayComplete?.dayIndex ?? null;
   const summary = dayComplete?.summary ?? null;
@@ -60,6 +69,7 @@ export default function DayCompleteOverlay({ dayComplete, onContinue }) {
     if (dayIndex == null) return;
     setSecondsLeft(AUTO_RESUME_SECONDS);
     setAutoResume(true);
+    setDontShowAgain(false);
   }, [dayIndex]);
 
   useEffect(() => {
@@ -68,7 +78,7 @@ export default function DayCompleteOverlay({ dayComplete, onContinue }) {
       setSecondsLeft((s) => {
         if (s <= 1) {
           clearInterval(intervalRef.current);
-          onContinue?.();
+          onContinue?.(dontShowAgainRef.current);
           return 0;
         }
         return s - 1;
@@ -79,7 +89,7 @@ export default function DayCompleteOverlay({ dayComplete, onContinue }) {
 
   useEffect(() => {
     if (dayIndex == null) return;
-    const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') onContinue?.(); };
+    const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') onContinue?.(dontShowAgainRef.current); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [dayIndex, onContinue]);
@@ -95,6 +105,7 @@ export default function DayCompleteOverlay({ dayComplete, onContinue }) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
+          onClick={() => onDismissPaused?.(dontShowAgainRef.current)}
           className="fixed inset-0 z-[500] flex items-center justify-center bg-slate-900/55 p-4 backdrop-blur-[2px]"
         >
           <motion.div
@@ -103,6 +114,7 @@ export default function DayCompleteOverlay({ dayComplete, onContinue }) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 8 }}
             transition={{ duration: 0.22, ease: 'easeOut' }}
+            onClick={(e) => e.stopPropagation()}
             className="relative w-full max-w-md overflow-hidden rounded-2xl border border-line bg-surface p-5 shadow-cardHover"
           >
             {/* Celebratory confetti burst, anchored above the headline icon */}
@@ -157,7 +169,16 @@ export default function DayCompleteOverlay({ dayComplete, onContinue }) {
               </div>
             </div>
 
-            <div className="mt-4 flex items-center justify-between gap-2 border-t border-line pt-3.5">
+            <div className="mt-3.5 flex items-center justify-between gap-2 border-t border-line pt-3">
+              <label className="flex items-center gap-1.5 text-[11px] font-medium text-ink-faint">
+                <input
+                  type="checkbox"
+                  checked={dontShowAgain}
+                  onChange={(e) => setDontShowAgain(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-brand-600"
+                />
+                Do not show me again
+              </label>
               {autoResume ? (
                 <button
                   type="button"
@@ -169,13 +190,18 @@ export default function DayCompleteOverlay({ dayComplete, onContinue }) {
               ) : (
                 <span className="text-[11px] font-medium text-ink-faint">Auto-resume paused</span>
               )}
+            </div>
 
+            <div className="mt-2.5 flex items-center justify-between gap-2">
+              <p className="text-[10px] leading-snug text-ink-faint">
+                Click outside this dialog to stay paused and look at the screen yourself.
+              </p>
               <motion.button
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.96 }}
                 type="button"
-                onClick={() => onContinue?.()}
-                className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-1.5 text-[12.5px] font-semibold text-white shadow-card transition-colors hover:bg-brand-700"
+                onClick={() => onContinue?.(dontShowAgain)}
+                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-1.5 text-[12.5px] font-semibold text-white shadow-card transition-colors hover:bg-brand-700"
               >
                 Continue <SkipForward size={14} />
               </motion.button>

@@ -19,6 +19,11 @@ export const DEFAULT_CONFIG = {
   // simulation behavior changes — the slider is a knob the user can move
   // away from this, not a changed starting point.
   accidentPct: NATURAL_ACCIDENT_PCT,
+  // Per-job-type overrides of JOB_TYPES' own arrivalPerDay/baseService case
+  // defaults (see desEngine.js's effectiveJob()) — editable in ConfigPanel's
+  // "Demand & Service Times" section. Empty by default: every job starts at
+  // its case-sourced default and only appears here once the user edits it.
+  jobOverrides: {},
   // Wage/wait-cost assumptions used by the Workforce Cost & Optimizer panel
   // (src/lib/workforceCost.js) — editable in ConfigPanel's "Cost
   // Assumptions" section. Does not affect the DES engine itself in any way;
@@ -75,6 +80,14 @@ export function useSimulation() {
   // "start the playthrough over".
   const [dayComplete, setDayComplete] = useState(null);
   const shownDayBoundariesRef = useRef(new Set());
+  // "Do not show me again" (see DayCompleteOverlay.jsx) — once the user
+  // checks that box and dismisses the popup (Continue, backdrop click, or
+  // the auto-resume timer firing), this is set for the rest of the current
+  // run: the RAF loop below simply stops treating day boundaries as pause
+  // points, so playback runs straight through every later day with no
+  // interruption. Reset on every fresh Run Simulation / Reset-to-day-1,
+  // same "start the playthrough over" rule shownDayBoundariesRef follows.
+  const skipDayCompleteRef = useRef(false);
 
   // End-of-simulation popup: `finalSummary` holds the essential whole-run
   // KPI summary the instant playback actually reaches the end of the
@@ -132,6 +145,7 @@ export function useSimulation() {
     setDayComplete(null);
     finalShownRef.current = false;
     setFinalSummary(null);
+    skipDayCompleteRef.current = false;
     return r;
   }, [config]);
 
@@ -157,6 +171,7 @@ export function useSimulation() {
     shownDayBoundariesRef.current = new Set();
     finalShownRef.current = false;
     setFinalSummary(null);
+    skipDayCompleteRef.current = false;
   }, [applyTime]);
   const jumpToEnd = useCallback(() => {
     if (!result) return;
@@ -175,11 +190,25 @@ export function useSimulation() {
   // path out of the overlay, whether triggered automatically (a countdown
   // timer inside the overlay component itself) or by the user clicking a
   // button. Playback resumes at exactly the day boundary it paused at,
-  // continuing on to look for the *next* unshown boundary.
-  const continueAfterDayComplete = useCallback(() => {
+  // continuing on to look for the *next* unshown boundary. `dontShowAgain`
+  // (from the overlay's own checkbox) arms skipDayCompleteRef so no later
+  // day boundary in this run pauses for the overlay again.
+  const continueAfterDayComplete = useCallback((dontShowAgain) => {
+    if (dontShowAgain) skipDayCompleteRef.current = true;
     setDayComplete(null);
     if (result) setPlaying(true);
   }, [result]);
+
+  // The OTHER way out of the overlay: dismissing it (clicking the backdrop,
+  // outside the dialog) without resuming playback, so the user can look at
+  // the paused screen for themselves instead of only being able to Continue
+  // or pause-then-wait-for the auto-resume countdown. Playback stays
+  // exactly where it is — no setPlaying(true) — the user presses Play
+  // themselves whenever they're ready.
+  const dismissDayCompletePaused = useCallback((dontShowAgain) => {
+    if (dontShowAgain) skipDayCompleteRef.current = true;
+    setDayComplete(null);
+  }, []);
 
   useEffect(() => {
     if (!playing || !result) return;
@@ -209,7 +238,11 @@ export function useSimulation() {
       // one day boundary in a single step.
       const boundaryIdx = Math.floor(prevT / dayMinutes) + 1;
       const boundaryT = boundaryIdx * dayMinutes;
-      const dayBoundaryHit = boundaryT <= horizonMinutes && boundaryT <= next && !shownDayBoundariesRef.current.has(boundaryIdx);
+      // skipDayCompleteRef short-circuits this to always-false once "Do not
+      // show me again" has been checked — playback then runs straight
+      // through every remaining day boundary with no pause at all, so the
+      // next (and every later) day starts immediately.
+      const dayBoundaryHit = !skipDayCompleteRef.current && boundaryT <= horizonMinutes && boundaryT <= next && !shownDayBoundariesRef.current.has(boundaryIdx);
 
       if (dayBoundaryHit) {
         next = boundaryT;
@@ -245,12 +278,34 @@ export function useSimulation() {
   // continueAfterDayComplete, there's no playback left to resume).
   const dismissFinalSummary = useCallback(() => setFinalSummary(null), []);
 
+  // Abort: stops playback and clears the run entirely, back to the exact
+  // pre-"Run Simulation" idle state (no result, no frame, status 'idle') —
+  // distinct from `reset()` above, which only rewinds playback to day 1 of
+  // the SAME already-computed result. The user's configuration in
+  // ConfigPanel is deliberately left untouched (this aborts a *run*, not
+  // the user's settings) so pressing Run Simulation again immediately
+  // starts a fresh run with what they'd already configured.
+  const abort = useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    setPlaying(false);
+    setResult(null);
+    setFrame(null);
+    tRef.current = 0;
+    setT(0);
+    setStatus('idle');
+    shownDayBoundariesRef.current = new Set();
+    setDayComplete(null);
+    finalShownRef.current = false;
+    setFinalSummary(null);
+    skipDayCompleteRef.current = false;
+  }, []);
+
   return {
     config, setConfig,
     result, frame, t,
     playing, speed, setSpeed, status,
-    runSimulation, play, pause, reset, jumpToEnd, scrubTo,
-    dayComplete, continueAfterDayComplete,
+    runSimulation, play, pause, reset, jumpToEnd, scrubTo, abort,
+    dayComplete, continueAfterDayComplete, dismissDayCompletePaused,
     finalSummary, dismissFinalSummary,
   };
 }
