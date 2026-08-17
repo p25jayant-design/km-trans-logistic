@@ -5,10 +5,12 @@ import {
 } from 'lucide-react';
 import Badge from './ui/Badge.jsx';
 import SimulationControls from './SimulationControls.jsx';
+import VisitorCounter from './ui/VisitorCounter.jsx';
+import iimaLogo from '../assets/iima-logo.png';
 import { bottleneckColorFor, hexToRgba } from '../lib/styleMaps.js';
 
 export default function Navbar({
-  onOpenConfig, clock, status, playing, onPlayPause, onJumpEnd, onReset, onRun,
+  onOpenConfig, clock, status, playing, onPlayPause, onJumpEnd, onReset, onRun, onAbort,
   speed, onSpeedChange, eventCount, bottleneck, onDownload, canDownload,
 }) {
   const statusTone = status === 'running' ? 'blue' : status === 'complete' ? 'green' : status === 'ready' ? 'amber' : 'neutral';
@@ -22,7 +24,11 @@ export default function Navbar({
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-surface/95 backdrop-blur px-5 py-3 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Masthead row: brand on the left, IIMA logo + site visitor counter
+          pinned to the true top-right corner of the page — kept on their
+          own row, separate from the busy playback-controls row below, so
+          neither cluster fights the other for space. */}
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 text-white shadow-card">
             <Truck size={20} strokeWidth={2.2} />
@@ -33,7 +39,13 @@ export default function Navbar({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-3">
+          <VisitorCounter />
+          <img src={iimaLogo} alt="IIM Ahmedabad" className="h-10 w-auto" />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-end gap-2">
           <motion.button
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.96 }}
@@ -83,10 +95,10 @@ export default function Navbar({
             onJumpEnd={onJumpEnd}
             onReset={onReset}
             onRun={onRun}
+            onAbort={onAbort}
             speed={speed}
             onSpeedChange={onSpeedChange}
           />
-        </div>
       </div>
     </header>
   );
