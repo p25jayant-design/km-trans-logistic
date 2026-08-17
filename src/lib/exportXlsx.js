@@ -122,7 +122,7 @@ const CORE_COLUMNS = [
  *  `queueEntryTime`, the `inspectionStart` entry in `truck.events` (only
  *  present for category==='inspection' jobs), `serviceStart`, `serviceEnd`,
  *  `departureTime`. */
-function coreRowValues(tr, cfg) {
+function coreRowValues(tr, cfg, dayMinutes) {
   const inspectionEvt = tr.events?.find((e) => e.type === 'inspectionStart');
   const m = (v) => (v == null ? '' : +v.toFixed(6));
   return {
@@ -139,15 +139,15 @@ function coreRowValues(tr, cfg) {
     bay: tr.bay || 'Not yet allocated',
     workers: formatWorkers(tr.job.req),
     arrivalMin: m(tr.arrivalTime),
-    arrivalFmt: fmtTime(tr.arrivalTime),
+    arrivalFmt: fmtTime(tr.arrivalTime, dayMinutes),
     queueMin: tr.queueEntryTime != null ? m(tr.queueEntryTime) : '',
     inspectionMin: inspectionEvt ? m(inspectionEvt.t) : '',
     serviceStartMin: m(tr.serviceStart),
-    serviceStartFmt: tr.serviceStart != null ? fmtTime(tr.serviceStart) : 'Not yet allocated',
+    serviceStartFmt: tr.serviceStart != null ? fmtTime(tr.serviceStart, dayMinutes) : 'Not yet allocated',
     serviceEndMin: m(tr.serviceEnd),
-    serviceEndFmt: tr.serviceEnd != null ? fmtTime(tr.serviceEnd) : '—',
+    serviceEndFmt: tr.serviceEnd != null ? fmtTime(tr.serviceEnd, dayMinutes) : '—',
     exitMin: m(tr.departureTime),
-    exitFmt: tr.departureTime != null ? fmtTime(tr.departureTime) : '—',
+    exitFmt: tr.departureTime != null ? fmtTime(tr.departureTime, dayMinutes) : '—',
     waitingMin: null,
     serviceMin: null,
     throughputMin: null,
@@ -214,7 +214,7 @@ export function exportSimulationXlsx(result) {
   const rows = result.trucks
     .slice()
     .sort((a, b) => a.id - b.id)
-    .map((tr) => ({ prefix: {}, core: coreRowValues(tr, result.cfg) }));
+    .map((tr) => ({ prefix: {}, core: coreRowValues(tr, result.cfg, result.dayMinutes) }));
 
   const { sheet } = buildTruckRowSheet([], rows);
 
@@ -224,7 +224,7 @@ export function exportSimulationXlsx(result) {
   XLSX.utils.book_append_sheet(workbook, notes, 'Read Me');
   XLSX.utils.book_append_sheet(workbook, sheet, 'Truck Records');
 
-  const stamp = fmtTime(result.totalDuration).replace(/[^0-9A-Za-z]+/g, '-');
+  const stamp = fmtTime(result.totalDuration, result.dayMinutes).replace(/[^0-9A-Za-z]+/g, '-');
   XLSX.writeFile(workbook, `km-trans-simulation-data-${stamp}.xlsx`);
 }
 
@@ -259,7 +259,7 @@ export function exportBayUtilizationXlsx(result) {
     .sort((a, b) => (a.bay < b.bay ? -1 : a.bay > b.bay ? 1 : a.id - b.id))
     .map((tr) => ({
       prefix: { bayId: tr.bay, bayType: BAY_TYPE_LABEL[tr.bay.replace(/\d+$/, '')] || tr.bay.replace(/\d+$/, '') },
-      core: coreRowValues(tr, result.cfg),
+      core: coreRowValues(tr, result.cfg, result.dayMinutes),
     }));
 
   const { sheet: historySheet, colLetter: hc, lastRow: hLastRow } = buildTruckRowSheet(
@@ -304,7 +304,7 @@ export function exportBayUtilizationXlsx(result) {
   const numPoints = 60;
   const sampleTimes = Array.from({ length: numPoints + 1 }, (_, i) => (result.totalDuration * i) / numPoints);
   const seriesHeaders = ['Sim Time (min)', 'Sim Time', ...allBayIds.map((id) => `${id} Util %`)];
-  const seriesAoa = [seriesHeaders, ...sampleTimes.map((t) => [+t.toFixed(6), fmtTime(t), ...allBayIds.map(() => null)])];
+  const seriesAoa = [seriesHeaders, ...sampleTimes.map((t) => [+t.toFixed(6), fmtTime(t, result.dayMinutes), ...allBayIds.map(() => null)])];
   const seriesSheet = XLSX.utils.aoa_to_sheet(seriesAoa);
   allBayIds.forEach((id, bi) => {
     const col = XLSX.utils.encode_col(2 + bi);
@@ -331,7 +331,7 @@ export function exportBayUtilizationXlsx(result) {
   XLSX.utils.book_append_sheet(workbook, historySheet, 'Bay Job History');
   XLSX.utils.book_append_sheet(workbook, seriesSheet, 'Utilization Over Time');
 
-  const stamp = fmtTime(result.totalDuration).replace(/[^0-9A-Za-z]+/g, '-');
+  const stamp = fmtTime(result.totalDuration, result.dayMinutes).replace(/[^0-9A-Za-z]+/g, '-');
   XLSX.writeFile(workbook, `km-trans-bay-utilization-${stamp}.xlsx`);
 }
 
@@ -366,7 +366,7 @@ export function exportWorkerUtilizationXlsx(result) {
         if (!count) return;
         assignmentRows.push({
           prefix: { dept: DEPT_NAMES[dept], workersRequired: count },
-          core: coreRowValues(tr, result.cfg),
+          core: coreRowValues(tr, result.cfg, result.dayMinutes),
           _deptKey: dept,
         });
       });
@@ -404,7 +404,7 @@ export function exportWorkerUtilizationXlsx(result) {
   const numPoints = 60;
   const sampleTimes = Array.from({ length: numPoints + 1 }, (_, i) => (result.totalDuration * i) / numPoints);
   const seriesHeaders = ['Sim Time (min)', 'Sim Time', ...DEPT_KEYS.map((k) => `${DEPT_NAMES[k]} Util %`)];
-  const seriesAoa = [seriesHeaders, ...sampleTimes.map((t) => [+t.toFixed(6), fmtTime(t), ...DEPT_KEYS.map(() => null)])];
+  const seriesAoa = [seriesHeaders, ...sampleTimes.map((t) => [+t.toFixed(6), fmtTime(t, result.dayMinutes), ...DEPT_KEYS.map(() => null)])];
   const seriesSheet = XLSX.utils.aoa_to_sheet(seriesAoa);
   DEPT_KEYS.forEach((k, di) => {
     const col = XLSX.utils.encode_col(2 + di);
@@ -432,6 +432,6 @@ export function exportWorkerUtilizationXlsx(result) {
   XLSX.utils.book_append_sheet(workbook, assignmentSheet, 'Job Assignments');
   XLSX.utils.book_append_sheet(workbook, seriesSheet, 'Utilization Over Time');
 
-  const stamp = fmtTime(result.totalDuration).replace(/[^0-9A-Za-z]+/g, '-');
+  const stamp = fmtTime(result.totalDuration, result.dayMinutes).replace(/[^0-9A-Za-z]+/g, '-');
   XLSX.writeFile(workbook, `km-trans-worker-utilization-${stamp}.xlsx`);
 }

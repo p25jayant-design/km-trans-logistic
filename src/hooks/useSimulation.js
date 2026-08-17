@@ -185,6 +185,12 @@ export function useSimulation() {
     if (!playing || !result) return;
     lastTsRef.current = null;
     const horizonMinutes = result.horizonMinutes ?? result.totalDuration;
+    // Length of one simulated shop-day (standard + overtime hours), read
+    // straight off this run's own result — see desEngine.js's simulate().
+    // Falls back to a plain 24h calendar day only if a result somehow
+    // lacks it (shouldn't happen for any run produced by the current
+    // engine, but keeps this loop from dividing by an undefined value).
+    const dayMinutes = result.dayMinutes || 1440;
     function loop(ts) {
       if (lastTsRef.current == null) lastTsRef.current = ts;
       const dtMs = ts - lastTsRef.current;
@@ -193,16 +199,16 @@ export function useSimulation() {
       let next = prevT + (dtMs / 1000) * speed;
 
       // Day-completion pause: find the first day boundary (a multiple of
-      // 1440, within the configured horizon) strictly after `prevT` that
-      // hasn't triggered its overlay yet. If this frame's advance would
+      // dayMinutes, within the configured horizon) strictly after `prevT`
+      // that hasn't triggered its overlay yet. If this frame's advance would
       // carry playback past it, stop exactly there instead — mirrors how
       // the totalDuration clamp below stops exactly at the end of the run
       // rather than overshooting past it. Only ever the *first* unshown
       // boundary is considered, so even a large dtMs (a lagged frame, a
       // backgrounded tab) can't skip an overlay by jumping past more than
       // one day boundary in a single step.
-      const boundaryIdx = Math.floor(prevT / 1440) + 1;
-      const boundaryT = boundaryIdx * 1440;
+      const boundaryIdx = Math.floor(prevT / dayMinutes) + 1;
+      const boundaryT = boundaryIdx * dayMinutes;
       const dayBoundaryHit = boundaryT <= horizonMinutes && boundaryT <= next && !shownDayBoundariesRef.current.has(boundaryIdx);
 
       if (dayBoundaryHit) {

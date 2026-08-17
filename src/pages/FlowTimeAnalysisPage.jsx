@@ -74,7 +74,7 @@ export default function FlowTimeAnalysisPage({ result, frame }) {
   // lookup on every animation-frame tick either way.
   const sampleTimes = result.flow.sampleTimes;
   const idx = Math.max(0, Math.min(sampleTimes.length - 1, countLE(sampleTimes, frame.t)));
-  const labels = sampleTimes.map((t) => (t / 1440).toFixed(1));
+  const labels = sampleTimes.map((t) => (t / (result.dayMinutes || 1440)).toFixed(1));
   const seriesInfo = categoryView
     ? result.flowByCategory.byCategory[categoryView.seriesKey]
     : result.flow.byJob[job.id];

@@ -163,10 +163,11 @@ export function buildFrame(result, t) {
     }
   });
 
+  const dayMinutes = result.dayMinutes || 1440;
   return {
     t,
-    clock: fmtTime(t),
-    day: Math.floor(t / 1440) + 1,
+    clock: fmtTime(t, dayMinutes),
+    day: Math.floor(t / dayMinutes) + 1,
     bays,
     queue: queueForDisplay,
     departments,
@@ -258,7 +259,7 @@ export function buildTrends(result, t, windowCount = 24) {
     }),
     completedCount,
     throughputPerDay: slice.map(s => {
-      const days = s.t / 1440;
+      const days = s.t / (result.dayMinutes || 1440);
       const cnt = ti ? countLE(ti.departTimes, s.t) : 0;
       return days > 0 ? cnt / days : 0;
     }),
@@ -300,7 +301,7 @@ export function liveKpis(result, t, category = null) {
     }
   }
   const n = completedN;
-  const days = t / 1440;
+  const days = t / (result.dayMinutes || 1440);
   return {
     avgWait: waitN ? waitSum / waitN : 0,
     avgSystem: n ? sysSum / n : 0,
@@ -375,7 +376,10 @@ export function liveFlowStats(result, t, jobId) {
 }
 
 /** Summary statistics for one completed simulated day — dayIndex 0 covers
- *  minutes [0, 1440), dayIndex 1 covers [1440, 2880), and so on. Powers the
+ *  minutes [0, dayMinutes), dayIndex 1 covers [dayMinutes, 2*dayMinutes),
+ *  and so on, where dayMinutes is the run's own standard+overtime shop-day
+ *  length (result.dayMinutes — see desEngine.js's simulate()), not a fixed
+ *  1440. Powers the
  *  day-completion overlay (useSimulation.js pauses playback right at each
  *  day boundary and DayCompleteOverlay.jsx renders this for the day that
  *  just ended). Every figure is derived directly from the engine's own
@@ -402,8 +406,9 @@ export function computeFinalSummary(result) {
 }
 
 export function computeDaySummary(result, dayIndex) {
-  const dayStart = dayIndex * 1440;
-  const dayEnd = Math.min((dayIndex + 1) * 1440, result.totalDuration);
+  const dayMinutes = result.dayMinutes || 1440;
+  const dayStart = dayIndex * dayMinutes;
+  const dayEnd = Math.min((dayIndex + 1) * dayMinutes, result.totalDuration);
   const dayLen = Math.max(0, dayEnd - dayStart);
   const clip = (s, e) => Math.max(0, Math.min(e, dayEnd) - Math.max(s, dayStart));
 
@@ -480,7 +485,7 @@ export function computeDaySummary(result, dayIndex) {
   // count): showing both lets a user see "how today went" alongside "how
   // the whole run is trending".
   const completedThroughDayEnd = result.trucks.filter((tr) => tr.departureTime != null && tr.departureTime <= dayEnd).length;
-  const elapsedDays = dayEnd / 1440;
+  const elapsedDays = dayEnd / dayMinutes;
   const throughputPerDay = elapsedDays > 0 ? completedThroughDayEnd / elapsedDays : 0;
 
   return {
@@ -665,6 +670,11 @@ export function getTruckDetails(result, truckId, t) {
     bay: truck.bay,
     assignedWorkers,
     expectedCompletion: truck.serviceEnd,
+    // Carried along so TruckTooltip's own fmtTime calls (arrival/expected
+    // completion) format "Day N" against this run's actual shop-day length
+    // instead of a hardcoded 24h assumption — simplest way to get it there
+    // without threading a whole new prop through TruckCard/BayCard/Queue.
+    dayMinutes: result.dayMinutes || 1440,
   };
 }
 

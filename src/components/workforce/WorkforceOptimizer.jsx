@@ -190,7 +190,7 @@ export default function WorkforceOptimizer({ config, setConfig, result }) {
 
       <p className="mb-3 flex items-start gap-1.5 text-[10px] leading-relaxed text-ink-faint">
         <Info size={11} className="mt-0.5 shrink-0" />
-        Over this run's {(result.horizonMinutes / 60 / 24).toFixed(0)}-day horizon. Labor Cost = blended wage x roster availability x hours worked (standard hours at normal rate, overtime hours at x{hoursInfo.otWageMultiplier}). Waiting Cost prices every truck-minute spent in queue (including trucks still queued when the run ended) at an escalating rate the longer a truck waits — edit hours, overtime %, rates, and tier thresholds in Configuration → Cost Assumptions.
+        Over this run's {result.cfg.horizonDays}-day horizon. Labor Cost = blended wage x roster availability x hours worked (standard hours at normal rate, overtime hours at x{hoursInfo.otWageMultiplier}). Waiting Cost prices every truck-minute spent in queue (including trucks still queued when the run ended) at an escalating rate the longer a truck waits — edit hours, overtime %, rates, and tier thresholds in Configuration → Cost Assumptions.
       </p>
 
       {currentCost.overWaitThreshold && (

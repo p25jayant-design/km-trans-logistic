@@ -31,12 +31,14 @@
      Labor Cost (per dept)  = blendedWage x deptAvail x paidHours, where
                                paidHours = (standard hrs/day x horizonDays)
                                + (overtime hrs/day x horizonDays x 1.5) —
-                               see "STANDARD HOURS + OVERTIME" below. Workers
-                               are paid for the configured workday, not the
-                               full 24h the engine itself simulates around
-                               the clock ("what you pay them for being on
-                               the roster, busy or not, absenteeism already
-                               excluded via deptAvail").
+                               see "STANDARD HOURS + OVERTIME" below. This is
+                               the same standard+overtime workday the engine
+                               itself now schedules arrivals and the horizon
+                               against (desEngine.js's `dayMinutes`), so
+                               paidHours and the hours the shop is actually
+                               open agree by construction ("what you pay them
+                               for being on the roster, busy or not,
+                               absenteeism already excluded via deptAvail").
      Busy Cost  (per dept)  = Labor Cost x deptUtil
                                ("the portion of that pay spent on time they
                                were actually working a job")
@@ -111,17 +113,27 @@
 
    Overtime hours are paid at `OT_WAGE_MULTIPLIER` (1.5x — the standard
    "time and a half" convention) on top of the same blended wage used for
-   standard hours; nothing else about the wage model changes. This is
-   deliberately a PRICING lever only — it changes what the configured
-   workforce costs to run, exactly like the wage-rate fields beside it, and
-   does not alter deptAvail, deptUtil, or anything `simulate()` computes:
-   the DES engine has no shift/hours-per-day concept at all (it runs fully
-   continuously), so this stays firmly in workforceCost.js, same as every
-   other cost figure in this file. Because `optimizeWorkforce` below always
+   standard hours; nothing else about the wage model changes.
+
+   As of the engine change described in desEngine.js's `simulate()`
+   (`dayMinutes`), this same hoursPerDay/overtimePct pair is ALSO what the
+   engine itself now schedules arrivals and the horizon against — the shop
+   only takes in new trucks during this many hours per simulated day, and
+   the horizon stops after `horizonDays` of that (see desEngine.js's own
+   comments for why: no code in *this* file was changed to make that
+   happen, cfg.costConfig is simply read from both places). So this section
+   still only prices what the workforce costs — `computeCostBreakdown` never
+   calls `simulate()` itself or alters any engine formula — but changing
+   hoursPerDay/overtimePct now genuinely changes the simulated capacity too,
+   not just the price tag: more hours/day means the same daily job volume
+   arrives spread across a longer window with more available service time,
+   which is what gives the optimizer below a real capacity/cost trade-off to
+   search over `overtimePct`. Because `optimizeWorkforce` below always
    prices every candidate through `computeCostBreakdown` with the user's own
-   `costConfig`, the current standard/overtime hours setting is
-   automatically reflected in every recommendation it produces — no
-   separate wiring needed.
+   `costConfig` (and every candidate is itself simulated with that same
+   `costConfig`, via `evalAcrossSeeds`), the current standard/overtime hours
+   setting is automatically reflected — both in results and in cost — in
+   every recommendation it produces, no separate wiring needed.
 
    OPTIMIZER METHODOLOGY (disclosed in the UI, not just here)
    ------------------------------------------------------------
@@ -326,7 +338,13 @@ export function computeWaitCostBreakdown(result, costConfig) {
  *  by the assumed wage/wait rates, it never recomputes utilization, busy
  *  time, or anything else the engine is responsible for. */
 export function computeCostBreakdown(result, costConfig) {
-  const horizonDays = result.horizonMinutes / 1440;
+  // Read directly off the run's own configured horizon rather than back-
+  // deriving it from horizonMinutes / (a day's minutes) — exact by
+  // construction, and unaffected if the run's day-length (result.dayMinutes,
+  // see desEngine.js's simulate()) differs from this costConfig's own
+  // hoursPerDay+overtime (e.g. a probe/candidate evaluation using a
+  // different costConfig than the one now being priced).
+  const horizonDays = result.cfg.horizonDays;
   const hours = hoursPerDayBreakdown(costConfig);
   const regularHours = hours.hoursPerDay * horizonDays;
   const overtimeHours = hours.overtimeHours * horizonDays;

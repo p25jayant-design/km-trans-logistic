@@ -36,7 +36,7 @@ export const KPI_DEFINITIONS = [
     id: 'throughput',
     label: 'Throughput / day',
     short: 'Average number of completed jobs per simulated day, so far.',
-    formula: 'completedCount ÷ (elapsed simulated minutes ÷ 1440)',
+    formula: 'completedCount ÷ (elapsed simulated minutes ÷ minutes-per-shop-day)',
     units: 'trucks per day',
     interpretation:
       'This is the workshop’s realized output rate. Compare it against the combined arrival rate of every configured job type — if throughput is holding below the arrival rate for a sustained stretch, the queue and waiting time will keep growing no matter how the numbers look at any single instant.',
