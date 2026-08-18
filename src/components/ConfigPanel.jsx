@@ -7,7 +7,6 @@ import Card from './ui/Card.jsx';
 import Panel from './ui/Panel.jsx';
 import { DEPT_KEYS, DEPT_NAMES, NATURAL_ACCIDENT_PCT, JOB_TYPES } from '../engine/desEngine.js';
 import { DEFAULT_COST_CONFIG, hoursPerDayBreakdown } from '../lib/workforceCost.js';
-import { estimateDemandCapacity } from '../lib/demandCapacity.js';
 
 function Field({ label, children }) {
   return (
@@ -164,13 +163,9 @@ export default function ConfigPanel({ config, setConfig }) {
   // so free typing isn't interrupted mid-keystroke by validation — the value
   // is only checked, and either committed or reverted, on blur (same pattern
   // as the Horizon field above). Every value here is freely editable and
-  // never rejected — the only capacity feedback is the explicit "Check
-  // Capacity" button below the table (see capacityCheck state), run once
-  // after all the edits are done, not on every individual change.
+  // never rejected or flagged — no capacity check runs against these values.
   const [rowText, setRowText] = useState({});
   const [overrideWarning, setOverrideWarning] = useState(null);
-  const [capacityCheck, setCapacityCheck] = useState(null);
-  const runCapacityCheck = () => setCapacityCheck(estimateDemandCapacity(config));
 
   const rowKey = (jobId, field) => `${jobId}:${field}`;
   const effectiveValue = (job, field) => {
@@ -197,9 +192,6 @@ export default function ConfigPanel({ config, setConfig }) {
       return;
     }
     setOverrideWarning(null);
-    // A prior capacity check no longer reflects the current inputs once
-    // anything changes — hide it until the user explicitly re-checks.
-    setCapacityCheck(null);
     setConfig((c) => ({
       ...c,
       jobOverrides: { ...c.jobOverrides, [job.id]: { ...c.jobOverrides?.[job.id], [field]: n } },
@@ -220,7 +212,6 @@ export default function ConfigPanel({ config, setConfig }) {
       return s2;
     });
     setOverrideWarning(null);
-    setCapacityCheck(null);
   };
 
   return (
@@ -303,7 +294,7 @@ export default function ConfigPanel({ config, setConfig }) {
 
       <ConfigSection id="demand" icon={Gauge} title="Demand & Service Times" openId={openId} setOpenId={setOpenId}>
         <p className="mb-2.5 text-[10px] leading-relaxed text-ink-faint">
-          Arrivals/day and Service time (minutes) default to the case's own figures and can be edited per job — every value here is freely editable. Once you're done making changes, use "Check Capacity" below to see whether the combination is sustainable at current headcount and shop hours.
+          Arrivals/day and Service time (minutes) default to the case's own figures and can be edited per job — every value here is freely editable.
         </p>
 
         {CATEGORY_GROUPS.map((group) => (
@@ -364,54 +355,6 @@ export default function ConfigPanel({ config, setConfig }) {
             )}
           </div>
         ))}
-
-        <div className="mt-1 flex items-center justify-between gap-2 border-t border-line pt-3">
-          <p className="text-[10px] leading-relaxed text-ink-faint">
-            Edit as many jobs as you like above, then check whether the combination is sustainable.
-          </p>
-          <button
-            type="button"
-            onClick={runCapacityCheck}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-[11.5px] font-semibold text-white shadow-card transition-colors hover:bg-brand-700"
-          >
-            <Gauge size={13} /> Check Capacity
-          </button>
-        </div>
-
-        {capacityCheck && (() => {
-          const overDepts = Object.values(capacityCheck.perDept)
-            .filter((d) => d.utilization >= capacityCheck.warnAt)
-            .sort((a, b) => b.utilization - a.utilization);
-          const anyBlocked = overDepts.some((d) => d.utilization >= capacityCheck.blockAt);
-          return (
-            <div
-              className={`mt-2.5 rounded-lg border p-2.5 text-[11px] ${
-                anyBlocked ? 'border-red-300 bg-red-50 text-red-800' : overDepts.length ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-              }`}
-            >
-              <div className="flex items-center gap-1.5 font-bold">
-                <Gauge size={13} />
-                {overDepts.length ? (anyBlocked ? 'Over long-run capacity' : 'Close to long-run capacity') : 'Within long-run capacity'}
-              </div>
-              {overDepts.length ? (
-                <>
-                  <p className="mt-1 leading-relaxed">
-                    This is a long-run (steady-state) estimate, not a prediction of any one run — a specific 14–60 day run may still look fine even when a department reads over 100% here.
-                  </p>
-                  <ul className="mt-1.5 list-disc space-y-1 pl-4 leading-snug">
-                    {overDepts.map((d) => (
-                      <li key={d.key}>
-                        {DEPT_NAMES[d.key]}: {(d.utilization * 100).toFixed(0)}% — add headcount or overtime hours to {DEPT_NAMES[d.key]}, or lower the Arrivals/day or Service time of jobs that use it.
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : (
-                <p className="mt-1 leading-relaxed">Every department is comfortably within its long-run available capacity at current headcount and shop hours.</p>
-              )}
-            </div>
-          );
-        })()}
       </ConfigSection>
 
       <ConfigSection id="bays" icon={Warehouse} title="Bay Configuration" openId={openId} setOpenId={setOpenId}>
