@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Settings, Warehouse, Users, Timer, Dices, LayoutList, Truck, AlertTriangle,
   IndianRupee, ChevronDown, ChevronUp, Gauge, RotateCcw,
@@ -7,7 +7,7 @@ import Card from './ui/Card.jsx';
 import Panel from './ui/Panel.jsx';
 import { DEPT_KEYS, DEPT_NAMES, NATURAL_ACCIDENT_PCT, JOB_TYPES } from '../engine/desEngine.js';
 import { DEFAULT_COST_CONFIG, hoursPerDayBreakdown } from '../lib/workforceCost.js';
-import { estimateDemandCapacity, validateOverrideEdit } from '../lib/demandCapacity.js';
+import { estimateDemandCapacity } from '../lib/demandCapacity.js';
 
 function Field({ label, children }) {
   return (
@@ -24,8 +24,7 @@ const inputClsSm = 'w-full rounded-md border border-line bg-white px-1.5 py-1 te
 /** Click-to-expand accordion section — only one section open at a time, so
  *  the panel reads as a set of tabs rather than one long continuous list of
  *  every input at once (per explicit request). Collapsed by default; an
- *  optional `badge` renders next to the chevron (used by the Demand section
- *  to show an always-visible capacity hint even while collapsed). */
+ *  optional `badge` renders next to the chevron for a section that needs one. */
 function ConfigSection({ id, icon: Icon, title, openId, setOpenId, badge, children }) {
   const open = openId === id;
   return (
@@ -48,32 +47,6 @@ function ConfigSection({ id, icon: Icon, title, openId, setOpenId, badge, childr
   );
 }
 
-/** Per-job capacity status for the small green/amber/red chip next to each
- *  demand row — the WORST utilization among the departments that specific
- *  job actually draws workers from (via job.req), read off the same
- *  estimateDemandCapacity(config) result that powers the section's
- *  aggregate banner and validateOverrideEdit's blocking rule, so the chip,
- *  the banner, and what actually gets rejected always agree with each
- *  other. */
-function jobRowStatus(job, capacity) {
-  const depts = Object.keys(job.req || {});
-  if (!depts.length) return { tone: 'green', worstDept: null, worstUtil: 0 };
-  let worstDept = null, worstUtil = -1;
-  depts.forEach((k) => {
-    const u = capacity.perDept[k]?.utilization ?? 0;
-    if (u > worstUtil) { worstUtil = u; worstDept = k; }
-  });
-  const tone = worstUtil >= capacity.blockAt ? 'red' : worstUtil >= capacity.warnAt ? 'amber' : 'green';
-  return { tone, worstDept, worstUtil };
-}
-
-const CHIP_LABEL = { green: 'OK', amber: 'Tight', red: 'Over' };
-const CHIP_CLASS = {
-  green: 'bg-emerald-100 text-emerald-700',
-  amber: 'bg-amber-100 text-amber-700',
-  red: 'bg-red-100 text-red-700',
-};
-
 const CATEGORY_GROUPS = [
   { key: 'standard', label: 'Standard Jobs', jobs: JOB_TYPES.filter((j) => j.category === 'standard') },
   { key: 'medium', label: 'Medium Jobs', jobs: JOB_TYPES.filter((j) => j.category === 'medium') },
@@ -90,14 +63,22 @@ export default function ConfigPanel({ config, setConfig }) {
 
   const update = (patch) => setConfig((c) => ({ ...c, ...patch }));
   const updateBay = (key, val) => setConfig((c) => ({ ...c, bays: { ...c.bays, [key]: Number(val) || 0 } }));
+  // Total is never directly editable (see the Workforce section below) — it
+  // always equals High + Medium + Low, recomputed here the instant any of
+  // those three changes, so it's impossible for the displayed Total to ever
+  // drift out of sync with its own skill breakdown (which is what both
+  // deptAvail — the actual headcount the engine schedules against — and the
+  // average-skill-multiplier calculation both key off).
   const updateDept = (key, field, val) =>
-    setConfig((c) => ({
-      ...c,
-      departments: {
-        ...c.departments,
-        [key]: { ...c.departments[key], [field]: field === 'absent' ? Math.min(1, Math.max(0, Number(val) / 100 || 0)) : Number(val) || 0 },
-      },
-    }));
+    setConfig((c) => {
+      const d = c.departments[key];
+      const n = field === 'absent' ? Math.min(1, Math.max(0, Number(val) / 100 || 0)) : Math.max(0, Number(val) || 0);
+      const next = { ...d, [field]: n };
+      if (field === 'high' || field === 'med' || field === 'low') {
+        next.total = (field === 'high' ? n : d.high) + (field === 'med' ? n : d.med) + (field === 'low' ? n : d.low);
+      }
+      return { ...c, departments: { ...c.departments, [key]: next } };
+    });
   const costConfig = config.costConfig || DEFAULT_COST_CONFIG;
   const hoursInfo = hoursPerDayBreakdown(costConfig);
   const updateCost = (field, val) => {
@@ -182,11 +163,14 @@ export default function ConfigPanel({ config, setConfig }) {
   // Each field keeps its own "currently typed" text (keyed by `${jobId}:${field}`)
   // so free typing isn't interrupted mid-keystroke by validation — the value
   // is only checked, and either committed or reverted, on blur (same pattern
-  // as the Horizon field above).
+  // as the Horizon field above). Every value here is freely editable and
+  // never rejected — the only capacity feedback is the explicit "Check
+  // Capacity" button below the table (see capacityCheck state), run once
+  // after all the edits are done, not on every individual change.
   const [rowText, setRowText] = useState({});
   const [overrideWarning, setOverrideWarning] = useState(null);
-
-  const capacity = useMemo(() => estimateDemandCapacity(config), [config]);
+  const [capacityCheck, setCapacityCheck] = useState(null);
+  const runCapacityCheck = () => setCapacityCheck(estimateDemandCapacity(config));
 
   const rowKey = (jobId, field) => `${jobId}:${field}`;
   const effectiveValue = (job, field) => {
@@ -212,13 +196,10 @@ export default function ConfigPanel({ config, setConfig }) {
       setRowText((s) => { const s2 = { ...s }; delete s2[key]; return s2; });
       return;
     }
-    const check = validateOverrideEdit(config, job.id, field, n);
-    if (!check.ok) {
-      setOverrideWarning({ jobId: job.id, message: check.message, dept: check.dept });
-      setRowText((s) => { const s2 = { ...s }; delete s2[key]; return s2; });
-      return;
-    }
     setOverrideWarning(null);
+    // A prior capacity check no longer reflects the current inputs once
+    // anything changes — hide it until the user explicitly re-checks.
+    setCapacityCheck(null);
     setConfig((c) => ({
       ...c,
       jobOverrides: { ...c.jobOverrides, [job.id]: { ...c.jobOverrides?.[job.id], [field]: n } },
@@ -239,17 +220,8 @@ export default function ConfigPanel({ config, setConfig }) {
       return s2;
     });
     setOverrideWarning(null);
+    setCapacityCheck(null);
   };
-
-  const capacityBadge = (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-        capacity.block ? 'bg-red-100 text-red-700' : capacity.warn ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
-      }`}
-    >
-      {Number.isFinite(capacity.worstUtilization) ? `${(capacity.worstUtilization * 100).toFixed(0)}%` : '∞'}
-    </span>
-  );
 
   return (
     <Card title="Configuration" icon={Settings} className="h-fit" bodyClassName="max-h-[calc(100vh-110px)] overflow-y-auto pr-1">
@@ -329,27 +301,9 @@ export default function ConfigPanel({ config, setConfig }) {
         </div>
       </ConfigSection>
 
-      <ConfigSection id="demand" icon={Gauge} title="Demand & Service Times" openId={openId} setOpenId={setOpenId} badge={capacityBadge}>
-        <div
-          className={`mb-3 rounded-lg border p-2.5 text-[11px] ${
-            capacity.block ? 'border-red-300 bg-red-50 text-red-800' : capacity.warn ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-          }`}
-        >
-          <div className="flex items-center gap-1.5 font-bold">
-            <Gauge size={13} />
-            Long-run load — {capacity.worstDept ? `${DEPT_NAMES[capacity.worstDept]}: ${(capacity.worstUtilization * 100).toFixed(0)}%` : 'no demand configured'}
-          </div>
-          <p className="mt-1 leading-relaxed">
-            {capacity.block
-              ? 'At current headcount and shop hours, this department would need more worker-time per day than is available on average — if the shop ran this way indefinitely, its queue would grow without bound. A specific 14–60 day run may still look fine (rare, long jobs like Accident Repair take many days to clear), but demand edits that push this further past 100% are rejected below.'
-              : capacity.warn
-                ? 'Close to this department\'s long-run available capacity — a bit more demand here could tip it into an unbounded queue.'
-                : 'Comfortably within this department\'s long-run available capacity.'}
-          </p>
-        </div>
-
+      <ConfigSection id="demand" icon={Gauge} title="Demand & Service Times" openId={openId} setOpenId={setOpenId}>
         <p className="mb-2.5 text-[10px] leading-relaxed text-ink-faint">
-          Arrivals/day and Service time (minutes) default to the case's own figures and can be edited per job. The banner above is a long-run (steady-state) estimate, not a prediction of any one run — check the Worker Utilization page after running the simulation for what a specific horizon actually showed. A demand/service-time increase that would newly push a department past 100% of its long-run capacity is rejected — you'll see why below the field. Lowering a value is always accepted.
+          Arrivals/day and Service time (minutes) default to the case's own figures and can be edited per job — every value here is freely editable. Once you're done making changes, use "Check Capacity" below to see whether the combination is sustainable at current headcount and shop hours.
         </p>
 
         {CATEGORY_GROUPS.map((group) => (
@@ -363,64 +317,42 @@ export default function ConfigPanel({ config, setConfig }) {
             <table className="w-full border-separate border-spacing-y-1 text-[11px]">
               <thead>
                 <tr className="text-left text-[10px] font-medium text-ink-faint">
-                  <th className="w-[34%] pb-0.5 font-medium">Job</th>
+                  <th className="w-[38%] pb-0.5 font-medium">Job</th>
                   <th className="pb-0.5 font-medium">Arrivals/day</th>
                   <th className="pb-0.5 font-medium">Service (min)</th>
-                  <th className="pb-0.5 font-medium" title="Capacity of the department(s) this job draws workers from">Cap.</th>
                   <th className="w-4"></th>
                 </tr>
               </thead>
               <tbody>
                 {group.jobs.map((job) => {
                   const overridden = !!config.jobOverrides?.[job.id];
-                  const status = jobRowStatus(job, capacity);
                   return (
-                    <React.Fragment key={job.id}>
-                      <tr>
-                        <td className="pr-1.5 align-middle text-[11px] text-ink-soft">{job.name}</td>
-                        <td className="pr-1 align-middle">
-                          <input
-                            type="number" min={0} step={0.1} className={inputClsSm}
-                            value={getRowValue(job, 'arrivalPerDay')}
-                            onChange={(e) => handleRowChange(job, 'arrivalPerDay', e.target.value)}
-                            onBlur={() => handleRowBlur(job, 'arrivalPerDay')}
-                          />
-                        </td>
-                        <td className="pr-1 align-middle">
-                          <input
-                            type="number" min={1} step={1} className={inputClsSm}
-                            value={getRowValue(job, 'baseService')}
-                            onChange={(e) => handleRowChange(job, 'baseService', e.target.value)}
-                            onBlur={() => handleRowBlur(job, 'baseService')}
-                          />
-                        </td>
-                        <td className="pr-1 align-middle">
-                          <span
-                            className={`inline-block rounded px-1.5 py-0.5 text-center text-[9px] font-bold ${CHIP_CLASS[status.tone]}`}
-                            title={status.worstDept ? `${DEPT_NAMES[status.worstDept]}: ${(status.worstUtil * 100).toFixed(0)}% of long-run capacity` : 'This job needs no department workers'}
-                          >
-                            {CHIP_LABEL[status.tone]}
-                          </span>
-                        </td>
-                        <td className="align-middle">
-                          {overridden && (
-                            <button type="button" onClick={() => resetJobOverride(job.id)} title="Reset to case default" className="text-ink-faint hover:text-brand-600">
-                              <RotateCcw size={12} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                      {status.tone === 'red' && (
-                        <tr>
-                          <td colSpan={5} className="pb-1 pl-1 pt-0.5">
-                            <ul className="list-disc space-y-0.5 pl-3.5 text-[9.5px] leading-snug text-red-700">
-                              <li>{DEPT_NAMES[status.worstDept]} is over its long-run capacity ({(status.worstUtil * 100).toFixed(0)}%) — add headcount or overtime hours there.</li>
-                              <li>Or lower this job's Arrivals/day or Service time above.</li>
-                            </ul>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
+                    <tr key={job.id}>
+                      <td className="pr-1.5 align-middle text-[11px] text-ink-soft">{job.name}</td>
+                      <td className="pr-1 align-middle">
+                        <input
+                          type="number" min={0} step={0.1} className={inputClsSm}
+                          value={getRowValue(job, 'arrivalPerDay')}
+                          onChange={(e) => handleRowChange(job, 'arrivalPerDay', e.target.value)}
+                          onBlur={() => handleRowBlur(job, 'arrivalPerDay')}
+                        />
+                      </td>
+                      <td className="pr-1 align-middle">
+                        <input
+                          type="number" min={1} step={1} className={inputClsSm}
+                          value={getRowValue(job, 'baseService')}
+                          onChange={(e) => handleRowChange(job, 'baseService', e.target.value)}
+                          onBlur={() => handleRowBlur(job, 'baseService')}
+                        />
+                      </td>
+                      <td className="align-middle">
+                        {overridden && (
+                          <button type="button" onClick={() => resetJobOverride(job.id)} title="Reset to case default" className="text-ink-faint hover:text-brand-600">
+                            <RotateCcw size={12} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
                   );
                 })}
               </tbody>
@@ -432,6 +364,54 @@ export default function ConfigPanel({ config, setConfig }) {
             )}
           </div>
         ))}
+
+        <div className="mt-1 flex items-center justify-between gap-2 border-t border-line pt-3">
+          <p className="text-[10px] leading-relaxed text-ink-faint">
+            Edit as many jobs as you like above, then check whether the combination is sustainable.
+          </p>
+          <button
+            type="button"
+            onClick={runCapacityCheck}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-[11.5px] font-semibold text-white shadow-card transition-colors hover:bg-brand-700"
+          >
+            <Gauge size={13} /> Check Capacity
+          </button>
+        </div>
+
+        {capacityCheck && (() => {
+          const overDepts = Object.values(capacityCheck.perDept)
+            .filter((d) => d.utilization >= capacityCheck.warnAt)
+            .sort((a, b) => b.utilization - a.utilization);
+          const anyBlocked = overDepts.some((d) => d.utilization >= capacityCheck.blockAt);
+          return (
+            <div
+              className={`mt-2.5 rounded-lg border p-2.5 text-[11px] ${
+                anyBlocked ? 'border-red-300 bg-red-50 text-red-800' : overDepts.length ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 font-bold">
+                <Gauge size={13} />
+                {overDepts.length ? (anyBlocked ? 'Over long-run capacity' : 'Close to long-run capacity') : 'Within long-run capacity'}
+              </div>
+              {overDepts.length ? (
+                <>
+                  <p className="mt-1 leading-relaxed">
+                    This is a long-run (steady-state) estimate, not a prediction of any one run — a specific 14–60 day run may still look fine even when a department reads over 100% here.
+                  </p>
+                  <ul className="mt-1.5 list-disc space-y-1 pl-4 leading-snug">
+                    {overDepts.map((d) => (
+                      <li key={d.key}>
+                        {DEPT_NAMES[d.key]}: {(d.utilization * 100).toFixed(0)}% — add headcount or overtime hours to {DEPT_NAMES[d.key]}, or lower the Arrivals/day or Service time of jobs that use it.
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="mt-1 leading-relaxed">Every department is comfortably within its long-run available capacity at current headcount and shop hours.</p>
+              )}
+            </div>
+          );
+        })()}
       </ConfigSection>
 
       <ConfigSection id="bays" icon={Warehouse} title="Bay Configuration" openId={openId} setOpenId={setOpenId}>
@@ -454,7 +434,13 @@ export default function ConfigPanel({ config, setConfig }) {
               <Panel key={k} className="p-2.5">
                 <div className="mb-1.5 text-[12px] font-semibold text-brand-700">{DEPT_NAMES[k]}</div>
                 <div className="grid grid-cols-3 gap-1.5">
-                  <Field label="Total"><input type="number" min={0} className={inputCls} value={d.total} onChange={(e) => updateDept(k, 'total', e.target.value)} /></Field>
+                  <Field label="Total (auto)">
+                    <input
+                      type="number" readOnly disabled value={d.total}
+                      title="Total = High + Medium + Low — edit those instead"
+                      className="w-full cursor-not-allowed rounded-md border border-line bg-surface-muted px-2.5 py-1.5 text-[13px] text-ink-faint"
+                    />
+                  </Field>
                   <Field label="High"><input type="number" min={0} className={inputCls} value={d.high} onChange={(e) => updateDept(k, 'high', e.target.value)} /></Field>
                   <Field label="Med"><input type="number" min={0} className={inputCls} value={d.med} onChange={(e) => updateDept(k, 'med', e.target.value)} /></Field>
                 </div>
