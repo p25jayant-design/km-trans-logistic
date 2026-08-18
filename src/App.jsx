@@ -108,9 +108,9 @@ export default function App() {
 
       <BootOverlay open={booting} config={config} onDone={handleBootDone} />
 
-      <DayCompleteOverlay dayComplete={dayComplete} onContinue={continueAfterDayComplete} onDismissPaused={dismissDayCompletePaused} />
+      <DayCompleteOverlay dayComplete={dayComplete} onContinue={continueAfterDayComplete} onDismissPaused={dismissDayCompletePaused} dayMinutes={result?.dayMinutes} />
 
-      <FinalSummaryOverlay finalSummary={finalSummary} onClose={dismissFinalSummary} horizonDays={config.horizonDays} />
+      <FinalSummaryOverlay finalSummary={finalSummary} onClose={dismissFinalSummary} horizonDays={config.horizonDays} dayMinutes={result?.dayMinutes} result={result} />
 
       <div className="mx-auto max-w-[1800px] px-4 pt-4">
         <HelpGuide />

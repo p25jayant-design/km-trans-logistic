@@ -35,21 +35,32 @@ export const CHART_LINE_COLORS = {
 };
 
 /** Formats a duration given in simulated minutes as a short, human-scale
- *  string — "42 min" for anything under an hour, "3h 15m" under a day, and
- *  "2d 4h" beyond that. Job flow times in this model span an enormous
- *  range (a 5-minute Air Filter Change up to a multi-day Accident Repair),
- *  so a single "X min" figure stops being readable well before the top of
- *  that range — this is purely a display formatter, never used for any
- *  calculation. */
-export function fmtDuration(minutes) {
+ *  string — "42 min" for anything under an hour, "3h 15m" under a full
+ *  working day, and "2d 4h" beyond that. Job flow times in this model span
+ *  an enormous range (a 5-minute Air Filter Change up to a multi-day
+ *  Accident Repair), so a single "X min" figure stops being readable well
+ *  before the top of that range — this is purely a display formatter,
+ *  never used for any calculation.
+ *
+ *  `dayMinutes` (pass `result.dayMinutes`) is what one working "day" of
+ *  shop time actually is — hoursPerDay + overtime, NOT a 24-hour calendar
+ *  day. The shop's simulated clock never has an idle overnight gap (see
+ *  desEngine.js), so a duration is genuinely "N working days" of continuous
+ *  shop time, and breaking it into days using a hardcoded 1440 would
+ *  silently assume 16 idle hours per day that don't exist in this model —
+ *  understating how many working days something actually took. Defaults to
+ *  1440 only for legacy callers that haven't been threaded a real
+ *  dayMinutes yet. */
+export function fmtDuration(minutes, dayMinutes = 1440) {
   if (minutes == null || Number.isNaN(minutes)) return '—';
+  const dm = dayMinutes > 0 ? dayMinutes : 1440;
   const m = Math.round(minutes);
   if (m < 60) return `${m} min`;
-  if (m < 1440) {
+  if (m < dm) {
     const h = Math.floor(m / 60), mm = m % 60;
     return mm > 0 ? `${h}h ${mm}m` : `${h}h`;
   }
-  const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60);
+  const d = Math.floor(m / dm), h = Math.floor((m % dm) / 60);
   return h > 0 ? `${d}d ${h}h` : `${d}d`;
 }
 

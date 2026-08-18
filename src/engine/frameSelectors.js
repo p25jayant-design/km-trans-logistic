@@ -732,8 +732,14 @@ export function expandTimelineEvents(eventsLog) {
   return out;
 }
 
-export function fmtMinutesShort(m) {
+// `dayMinutes` (pass result.dayMinutes, or a truck-detail's own .dayMinutes
+// field — see getTruckDetails below) is the shop's real working-day length
+// (hoursPerDay + overtime), not a 24h calendar day — see fmtDuration in
+// theme.js for why breaking a duration into "days" must use this instead of
+// a hardcoded 1440.
+export function fmtMinutesShort(m, dayMinutes = 1440) {
+  const dm = dayMinutes > 0 ? dayMinutes : 1440;
   if (m < 60) return `${m.toFixed(0)} min`;
-  if (m < 1440) return `${(m / 60).toFixed(1)} hr`;
-  return `${(m / 1440).toFixed(1)} day`;
+  if (m < dm) return `${(m / 60).toFixed(1)} hr`;
+  return `${(m / dm).toFixed(1)} day`;
 }

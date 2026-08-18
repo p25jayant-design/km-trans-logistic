@@ -48,6 +48,32 @@ function ConfigSection({ id, icon: Icon, title, openId, setOpenId, badge, childr
   );
 }
 
+/** Per-job capacity status for the small green/amber/red chip next to each
+ *  demand row — the WORST utilization among the departments that specific
+ *  job actually draws workers from (via job.req), read off the same
+ *  estimateDemandCapacity(config) result that powers the section's
+ *  aggregate banner and validateOverrideEdit's blocking rule, so the chip,
+ *  the banner, and what actually gets rejected always agree with each
+ *  other. */
+function jobRowStatus(job, capacity) {
+  const depts = Object.keys(job.req || {});
+  if (!depts.length) return { tone: 'green', worstDept: null, worstUtil: 0 };
+  let worstDept = null, worstUtil = -1;
+  depts.forEach((k) => {
+    const u = capacity.perDept[k]?.utilization ?? 0;
+    if (u > worstUtil) { worstUtil = u; worstDept = k; }
+  });
+  const tone = worstUtil >= capacity.blockAt ? 'red' : worstUtil >= capacity.warnAt ? 'amber' : 'green';
+  return { tone, worstDept, worstUtil };
+}
+
+const CHIP_LABEL = { green: 'OK', amber: 'Tight', red: 'Over' };
+const CHIP_CLASS = {
+  green: 'bg-emerald-100 text-emerald-700',
+  amber: 'bg-amber-100 text-amber-700',
+  red: 'bg-red-100 text-red-700',
+};
+
 const CATEGORY_GROUPS = [
   { key: 'standard', label: 'Standard Jobs', jobs: JOB_TYPES.filter((j) => j.category === 'standard') },
   { key: 'medium', label: 'Medium Jobs', jobs: JOB_TYPES.filter((j) => j.category === 'medium') },
@@ -337,42 +363,64 @@ export default function ConfigPanel({ config, setConfig }) {
             <table className="w-full border-separate border-spacing-y-1 text-[11px]">
               <thead>
                 <tr className="text-left text-[10px] font-medium text-ink-faint">
-                  <th className="w-[38%] pb-0.5 font-medium">Job</th>
+                  <th className="w-[34%] pb-0.5 font-medium">Job</th>
                   <th className="pb-0.5 font-medium">Arrivals/day</th>
                   <th className="pb-0.5 font-medium">Service (min)</th>
+                  <th className="pb-0.5 font-medium" title="Capacity of the department(s) this job draws workers from">Cap.</th>
                   <th className="w-4"></th>
                 </tr>
               </thead>
               <tbody>
                 {group.jobs.map((job) => {
                   const overridden = !!config.jobOverrides?.[job.id];
+                  const status = jobRowStatus(job, capacity);
                   return (
-                    <tr key={job.id}>
-                      <td className="pr-1.5 align-middle text-[11px] text-ink-soft">{job.name}</td>
-                      <td className="pr-1 align-middle">
-                        <input
-                          type="number" min={0} step={0.1} className={inputClsSm}
-                          value={getRowValue(job, 'arrivalPerDay')}
-                          onChange={(e) => handleRowChange(job, 'arrivalPerDay', e.target.value)}
-                          onBlur={() => handleRowBlur(job, 'arrivalPerDay')}
-                        />
-                      </td>
-                      <td className="pr-1 align-middle">
-                        <input
-                          type="number" min={1} step={1} className={inputClsSm}
-                          value={getRowValue(job, 'baseService')}
-                          onChange={(e) => handleRowChange(job, 'baseService', e.target.value)}
-                          onBlur={() => handleRowBlur(job, 'baseService')}
-                        />
-                      </td>
-                      <td className="align-middle">
-                        {overridden && (
-                          <button type="button" onClick={() => resetJobOverride(job.id)} title="Reset to case default" className="text-ink-faint hover:text-brand-600">
-                            <RotateCcw size={12} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+                    <React.Fragment key={job.id}>
+                      <tr>
+                        <td className="pr-1.5 align-middle text-[11px] text-ink-soft">{job.name}</td>
+                        <td className="pr-1 align-middle">
+                          <input
+                            type="number" min={0} step={0.1} className={inputClsSm}
+                            value={getRowValue(job, 'arrivalPerDay')}
+                            onChange={(e) => handleRowChange(job, 'arrivalPerDay', e.target.value)}
+                            onBlur={() => handleRowBlur(job, 'arrivalPerDay')}
+                          />
+                        </td>
+                        <td className="pr-1 align-middle">
+                          <input
+                            type="number" min={1} step={1} className={inputClsSm}
+                            value={getRowValue(job, 'baseService')}
+                            onChange={(e) => handleRowChange(job, 'baseService', e.target.value)}
+                            onBlur={() => handleRowBlur(job, 'baseService')}
+                          />
+                        </td>
+                        <td className="pr-1 align-middle">
+                          <span
+                            className={`inline-block rounded px-1.5 py-0.5 text-center text-[9px] font-bold ${CHIP_CLASS[status.tone]}`}
+                            title={status.worstDept ? `${DEPT_NAMES[status.worstDept]}: ${(status.worstUtil * 100).toFixed(0)}% of long-run capacity` : 'This job needs no department workers'}
+                          >
+                            {CHIP_LABEL[status.tone]}
+                          </span>
+                        </td>
+                        <td className="align-middle">
+                          {overridden && (
+                            <button type="button" onClick={() => resetJobOverride(job.id)} title="Reset to case default" className="text-ink-faint hover:text-brand-600">
+                              <RotateCcw size={12} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {status.tone === 'red' && (
+                        <tr>
+                          <td colSpan={5} className="pb-1 pl-1 pt-0.5">
+                            <ul className="list-disc space-y-0.5 pl-3.5 text-[9.5px] leading-snug text-red-700">
+                              <li>{DEPT_NAMES[status.worstDept]} is over its long-run capacity ({(status.worstUtil * 100).toFixed(0)}%) — add headcount or overtime hours there.</li>
+                              <li>Or lower this job's Arrivals/day or Service time above.</li>
+                            </ul>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
