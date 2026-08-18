@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import {
-  Truck, Settings, Clock3, Activity, AlertTriangle, ListChecks, Download,
+  Truck, Settings, Clock3, Activity, AlertTriangle, ListChecks, Download, Users,
 } from 'lucide-react';
 import Badge from './ui/Badge.jsx';
 import SimulationControls from './SimulationControls.jsx';
@@ -12,6 +12,7 @@ import { bottleneckColorFor, hexToRgba } from '../lib/styleMaps.js';
 export default function Navbar({
   onOpenConfig, clock, status, playing, onPlayPause, onJumpEnd, onReset, onRun, onAbort,
   speed, onSpeedChange, eventCount, bottleneck, onDownload, canDownload,
+  onOpenContributors, contributorsActive,
 }) {
   const statusTone = status === 'running' ? 'blue' : status === 'complete' ? 'green' : status === 'ready' ? 'amber' : 'neutral';
   const statusLabel = { idle: 'Idle', ready: 'Ready', running: 'Running', complete: 'Complete' }[status] || 'Idle';
@@ -40,6 +41,19 @@ export default function Navbar({
         </div>
 
         <div className="flex items-center gap-3">
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.96 }}
+            onClick={onOpenContributors}
+            title="See who built this"
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-medium transition-colors ${
+              contributorsActive
+                ? 'border-brand-600 bg-brand-600 text-white shadow-card'
+                : 'border-line bg-white text-ink-soft hover:bg-surface-soft hover:shadow-sm'
+            }`}
+          >
+            <Users size={15} /> Contributors
+          </motion.button>
           <VisitorCounter />
           <img src={iimaLogo} alt="IIM Ahmedabad" className="h-10 w-auto" />
         </div>

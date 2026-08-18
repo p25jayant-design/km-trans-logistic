@@ -20,6 +20,7 @@ import BootOverlay from './components/BootOverlay.jsx';
 import BayUtilizationPage from './pages/BayUtilizationPage.jsx';
 import WorkerUtilizationPage from './pages/WorkerUtilizationPage.jsx';
 import FlowTimeAnalysisPage from './pages/FlowTimeAnalysisPage.jsx';
+import ContributorsPage from './pages/ContributorsPage.jsx';
 
 const PAGES = [
   { key: 'live', label: 'Live Simulation', icon: Factory },
@@ -101,6 +102,8 @@ export default function App() {
         bottleneck={frame?.bottleneck}
         onDownload={() => exportSimulationXlsx(result)}
         canDownload={!!result}
+        onOpenContributors={() => setPage((p) => (p === 'contributors' ? 'live' : 'contributors'))}
+        contributorsActive={page === 'contributors'}
       />
 
       <BootOverlay open={booting} config={config} onDone={handleBootDone} />
@@ -174,6 +177,7 @@ export default function App() {
         {page === 'bays' && <BayUtilizationPage result={result} frame={frame} />}
         {page === 'workers' && <WorkerUtilizationPage result={result} frame={frame} />}
         {page === 'flow' && <FlowTimeAnalysisPage result={result} frame={frame} />}
+        {page === 'contributors' && <ContributorsPage />}
       </main>
     </div>
   );
