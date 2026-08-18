@@ -72,8 +72,8 @@ export default function SimulationSummary({ result }) {
           <Timer size={13} /> Average Flow Time
         </div>
         <div className="grid grid-cols-2 gap-2.5">
-          <StatTile value={fmtDuration(summary.accidentAvgFlowTime)} label="Accident Repair" valueClassName="text-[19px] font-extrabold tabular-nums text-red-600" />
-          <StatTile value={fmtDuration(summary.standardAvgFlowTime)} label="Standard" valueClassName="text-[19px] font-extrabold tabular-nums text-emerald-600" />
+          <StatTile value={fmtDuration(summary.accidentAvgFlowTime, result.dayMinutes)} label="Accident Repair" valueClassName="text-[19px] font-extrabold tabular-nums text-red-600" />
+          <StatTile value={fmtDuration(summary.standardAvgFlowTime, result.dayMinutes)} label="Standard" valueClassName="text-[19px] font-extrabold tabular-nums text-emerald-600" />
         </div>
       </div>
 

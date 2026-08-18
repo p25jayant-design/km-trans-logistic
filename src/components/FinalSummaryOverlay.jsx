@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, HardHat, Smile } from 'lucide-react';
+import { CheckCircle2, HardHat, Smile, FileSpreadsheet, Download, CheckCheck } from 'lucide-react';
 import { fmtDuration } from '../lib/theme.js';
+import { exportSimulationXlsx, exportBayUtilizationXlsx, exportWorkerUtilizationXlsx } from '../lib/exportXlsx.js';
 
 function StatBlock({ value, label }) {
   return (
@@ -21,13 +22,37 @@ function StatBlock({ value, label }) {
  *  numbers (see computeFinalSummary in frameSelectors.js), each with real
  *  breathing room, and no per-day clutter like a bottleneck tile or
  *  auto-resume countdown — there is nothing left to resume. */
-export default function FinalSummaryOverlay({ finalSummary, onClose, horizonDays }) {
+export default function FinalSummaryOverlay({ finalSummary, onClose, horizonDays, dayMinutes, result }) {
+  // Tracks the "want the Excel reports?" yes/no prompt for the CURRENT
+  // popup only — reset back to unanswered every time a new run completes
+  // (a fresh `finalSummary` object), so a choice made on one run's popup
+  // never silently carries over and pre-answers the next one.
+  const [downloadChoice, setDownloadChoice] = useState(null);
+  useEffect(() => {
+    if (finalSummary) setDownloadChoice(null);
+  }, [finalSummary]);
+
   useEffect(() => {
     if (!finalSummary) return;
     const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') onClose?.(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [finalSummary, onClose]);
+
+  // No backend/email service is wired up (see chat) — "yes" downloads the
+  // same three Excel reports available elsewhere in the app (Download Data,
+  // Bay Utilization, Worker Utilization) straight to the user's own
+  // computer, right from this popup, instead of sending anything anywhere.
+  // Staggered slightly since three `XLSX.writeFile` calls fired in the same
+  // instant can trip a browser's "this site is trying to download multiple
+  // files" prompt.
+  const handleDownloadYes = () => {
+    setDownloadChoice('yes');
+    if (!result) return;
+    exportSimulationXlsx(result);
+    setTimeout(() => exportBayUtilizationXlsx(result), 350);
+    setTimeout(() => exportWorkerUtilizationXlsx(result), 700);
+  };
 
   if (typeof document === 'undefined') return null;
 
@@ -72,12 +97,46 @@ export default function FinalSummaryOverlay({ finalSummary, onClose, horizonDays
 
             <div className="mt-7 grid grid-cols-2 gap-5">
               <StatBlock value={finalSummary.trucksCompleted} label="Trucks Completed" />
-              <StatBlock value={fmtDuration(finalSummary.avgWaitingTime)} label="Avg Waiting Time" />
-              <StatBlock value={fmtDuration(finalSummary.avgFlowTime)} label="Avg Flow Time" />
+              <StatBlock value={fmtDuration(finalSummary.avgWaitingTime, dayMinutes)} label="Avg Waiting Time" />
+              <StatBlock value={fmtDuration(finalSummary.avgFlowTime, dayMinutes)} label="Avg Flow Time" />
               <StatBlock value={finalSummary.throughputPerDay.toFixed(1)} label="Throughput / day" />
             </div>
 
-            <div className="mt-8 flex justify-end">
+            <div className="mt-6 rounded-xl border border-line bg-surface-soft p-4">
+              {downloadChoice === 'yes' ? (
+                <div className="flex items-center gap-2 text-[12.5px] font-semibold text-emerald-700">
+                  <CheckCheck size={16} /> Downloading the Simulation, Bay Utilization, and Worker Utilization reports to your computer now.
+                </div>
+              ) : downloadChoice === 'no' ? (
+                <div className="flex items-center gap-2 text-[12.5px] text-ink-faint">
+                  No problem — you can still grab any of these later from Download Data or the Bay/Worker Utilization pages.
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <span className="flex items-center gap-2 text-[12.5px] font-medium text-ink-soft">
+                    <FileSpreadsheet size={16} className="text-brand-600" /> Want the Excel reports for this run (Simulation, Bay Utilization, Worker Utilization)?
+                  </span>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDownloadYes}
+                      className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-card transition-colors hover:bg-brand-700"
+                    >
+                      <Download size={13} /> Yes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDownloadChoice('no')}
+                      className="rounded-lg border border-line bg-white px-3 py-1.5 text-[12px] font-medium text-ink-soft transition-colors hover:bg-surface-soft"
+                    >
+                      No thanks
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5 flex justify-end">
               <motion.button
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.96 }}

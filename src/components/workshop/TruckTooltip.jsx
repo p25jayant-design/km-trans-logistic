@@ -43,7 +43,7 @@ export default function TruckTooltip({ anchorRect, details }) {
             #{details.truckId} · {details.jobName}
           </div>
           <Row icon={CalendarClock} label="Arrival Time" value={fmtTime(details.arrivalTime, details.dayMinutes)} />
-          <Row icon={Hourglass} label="Waiting Time" value={fmtMinutesShort(details.waitTime)} />
+          <Row icon={Hourglass} label="Waiting Time" value={fmtMinutesShort(details.waitTime, details.dayMinutes)} />
           <Row
             icon={Users}
             label="Assigned Workers"

@@ -43,7 +43,7 @@ const MOTION_PRESETS = {
  *  green = under service, gray = completed. Hovering reveals a floating
  *  detail panel (arrival time, waiting time, assigned workers, bay,
  *  expected completion) fed by the read-only `onInspect(truckId)` lookup. */
-export default function TruckCard({ truck, state = 'waiting', variant = 'queue', layoutId, onInspect }) {
+export default function TruckCard({ truck, state = 'waiting', variant = 'queue', layoutId, onInspect, dayMinutes }) {
   const palette = TRUCK_STATE_COLOR[state] || TRUCK_STATE_COLOR.waiting;
   const VehicleIcon = VEHICLE_ICON[truck.vehicleType] || Truck;
   const motionProps = MOTION_PRESETS[variant] || MOTION_PRESETS.queue;
@@ -96,7 +96,7 @@ export default function TruckCard({ truck, state = 'waiting', variant = 'queue',
           <span className="flex items-center gap-1"><ListOrdered size={11} /> Position {truck.position}</span>
         )}
         {(state === 'allocated' || state === 'service') && truck.remainingMin != null && (
-          <span className="flex items-center gap-1"><Timer size={11} /> {fmtMinutesShort(truck.remainingMin)} left</span>
+          <span className="flex items-center gap-1"><Timer size={11} /> {fmtMinutesShort(truck.remainingMin, dayMinutes)} left</span>
         )}
         {state === 'completed' && (
           <span className="flex items-center gap-1 text-emerald-600"><CheckCircle2 size={11} /> Departed</span>

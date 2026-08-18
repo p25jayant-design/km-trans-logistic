@@ -49,7 +49,7 @@ function useConfettiPieces(seed) {
  *  A "Do not show me again" checkbox suppresses this overlay for every
  *  later day boundary in the current run (see useSimulation.js's
  *  skipDayCompleteRef) — future days then start immediately, no pause. */
-export default function DayCompleteOverlay({ dayComplete, onContinue, onDismissPaused }) {
+export default function DayCompleteOverlay({ dayComplete, onContinue, onDismissPaused, dayMinutes }) {
   const [secondsLeft, setSecondsLeft] = useState(AUTO_RESUME_SECONDS);
   const [autoResume, setAutoResume] = useState(true);
   const [dontShowAgain, setDontShowAgain] = useState(false);
@@ -147,7 +147,7 @@ export default function DayCompleteOverlay({ dayComplete, onContinue, onDismissP
 
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
               <StatTile value={summary.trucksProcessed} label="Trucks Processed" />
-              <StatTile value={fmtDuration(summary.avgWaitingTime)} label="Avg Waiting Time" />
+              <StatTile value={fmtDuration(summary.avgWaitingTime, dayMinutes)} label="Avg Waiting Time" />
               <StatTile value={summary.throughputPerDay.toFixed(1)} label="Throughput /day (avg)" />
               <StatTile value={`${(summary.bayUtilization * 100).toFixed(0)}%`} label="Bay Utilization" />
               <StatTile value={`${(summary.workerUtilization * 100).toFixed(0)}%`} label="Worker Utilization" />

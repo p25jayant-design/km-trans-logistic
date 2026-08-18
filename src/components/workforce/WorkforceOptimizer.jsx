@@ -227,8 +227,8 @@ export default function WorkforceOptimizer({ config, setConfig, result }) {
               <span className="text-[12px] font-semibold text-ink-faint">({opt.savingsPct >= 0 ? '' : '+'}{opt.savingsPct.toFixed(1)}% total cost)</span>
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-ink-soft">
-              <span>Avg wait — before: <strong className="tabular-nums">{fmtDuration(opt.before.avgWait)}</strong></span>
-              <span>Avg wait — after: <strong className="tabular-nums">{fmtDuration(opt.after.avgWait)}</strong></span>
+              <span>Avg wait — before: <strong className="tabular-nums">{fmtDuration(opt.before.avgWait, result.dayMinutes)}</strong></span>
+              <span>Avg wait — after: <strong className="tabular-nums">{fmtDuration(opt.after.avgWait, result.dayMinutes)}</strong></span>
             </div>
             <button
               type="button"

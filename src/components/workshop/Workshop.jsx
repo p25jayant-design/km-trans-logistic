@@ -38,7 +38,7 @@ function GateBadge({ icon: Icon, label, sub, tone }) {
   );
 }
 
-function BaySection({ title, icon: Icon, bays, emptyHint, onInspect, bottleneck }) {
+function BaySection({ title, icon: Icon, bays, emptyHint, onInspect, bottleneck, dayMinutes }) {
   const isBottleneck = bottleneck?.label === title;
 
   if (!bays.length) {
@@ -64,7 +64,7 @@ function BaySection({ title, icon: Icon, bays, emptyHint, onInspect, bottleneck 
         )}
       </div>
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
-        {bays.map((bay) => <BayCard key={bay.id} bay={bay} onInspect={onInspect} bottleneck={bottleneck} />)}
+        {bays.map((bay) => <BayCard key={bay.id} bay={bay} onInspect={onInspect} bottleneck={bottleneck} dayMinutes={dayMinutes} />)}
       </div>
     </div>
   );
@@ -169,6 +169,7 @@ export default function Workshop({ result, frame }) {
             emptyHint="No inspection bays configured."
             onInspect={inspectTruck}
             bottleneck={frame.bottleneck}
+            dayMinutes={result?.dayMinutes}
           />
           <StageArrow />
 
@@ -179,6 +180,7 @@ export default function Workshop({ result, frame }) {
             emptyHint="No standard bays configured."
             onInspect={inspectTruck}
             bottleneck={frame.bottleneck}
+            dayMinutes={result?.dayMinutes}
           />
           <StageArrow />
 
@@ -189,6 +191,7 @@ export default function Workshop({ result, frame }) {
             emptyHint="No dedicated bays configured — long-duration jobs are routed to Standard Bays."
             onInspect={inspectTruck}
             bottleneck={frame.bottleneck}
+            dayMinutes={result?.dayMinutes}
           />
           <StageArrow label="Job complete" />
 

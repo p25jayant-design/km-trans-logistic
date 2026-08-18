@@ -24,7 +24,7 @@ import { DEPT_NAMES } from '../../engine/desEngine.js';
  *  small badge switch to that department's color from the color-coded
  *  bottleneck system — flagging precisely which occupied bays are being
  *  held up by the worker shortage, as opposed to every bay of that type. */
-export default function BayCard({ bay, onInspect, bottleneck }) {
+export default function BayCard({ bay, onInspect, bottleneck, dayMinutes }) {
   const [justFinished, setJustFinished] = useState(false);
   const wasBusy = useRef(false);
 
@@ -133,6 +133,7 @@ export default function BayCard({ bay, onInspect, bottleneck }) {
               variant="bay"
               layoutId={`truck-${bay.truckId}`}
               onInspect={onInspect}
+              dayMinutes={dayMinutes}
             />
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
               <motion.div

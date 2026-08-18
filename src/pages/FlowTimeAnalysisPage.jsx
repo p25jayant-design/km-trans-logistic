@@ -122,11 +122,11 @@ export default function FlowTimeAnalysisPage({ result, frame }) {
         }
       >
         <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
-          <StatTile value={fmtDuration(stats.avg)} label="Average Flow Time" />
-          <StatTile value={fmtDuration(stats.median)} label="Median Flow Time" />
-          <StatTile value={fmtDuration(stats.min)} label="Minimum" valueClassName="text-[19px] font-extrabold tabular-nums text-emerald-600" />
-          <StatTile value={fmtDuration(stats.max)} label="Maximum" valueClassName="text-[19px] font-extrabold tabular-nums text-red-500" />
-          <StatTile value={fmtDuration(stats.stdDev)} label="Std. Deviation" valueClassName="text-[19px] font-extrabold tabular-nums text-violet-600" />
+          <StatTile value={fmtDuration(stats.avg, result.dayMinutes)} label="Average Flow Time" />
+          <StatTile value={fmtDuration(stats.median, result.dayMinutes)} label="Median Flow Time" />
+          <StatTile value={fmtDuration(stats.min, result.dayMinutes)} label="Minimum" valueClassName="text-[19px] font-extrabold tabular-nums text-emerald-600" />
+          <StatTile value={fmtDuration(stats.max, result.dayMinutes)} label="Maximum" valueClassName="text-[19px] font-extrabold tabular-nums text-red-500" />
+          <StatTile value={fmtDuration(stats.stdDev, result.dayMinutes)} label="Std. Deviation" valueClassName="text-[19px] font-extrabold tabular-nums text-violet-600" />
           <StatTile
             valueNode={<div className="flex items-center justify-center gap-1 text-[19px] font-extrabold tabular-nums text-ink"><Hash size={14} className="text-ink-faint" />{stats.n}</div>}
             label="Completed So Far"
@@ -152,7 +152,7 @@ export default function FlowTimeAnalysisPage({ result, frame }) {
               ...BASE_LINE_OPTIONS.plugins,
               tooltip: {
                 ...BASE_LINE_OPTIONS.plugins.tooltip,
-                callbacks: { label: (ctx) => `${fmtDuration(ctx.parsed.y)} avg flow time` },
+                callbacks: { label: (ctx) => `${fmtDuration(ctx.parsed.y, result.dayMinutes)} avg flow time` },
               },
             },
           }}

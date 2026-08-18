@@ -274,9 +274,19 @@ export function useSimulation() {
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
   }, [playing, result, speed, showFinalSummaryIfNeeded]);
 
-  // Dismisses the end-of-simulation popup — purely a close action (unlike
-  // continueAfterDayComplete, there's no playback left to resume).
-  const dismissFinalSummary = useCallback(() => setFinalSummary(null), []);
+  // Dismisses the end-of-simulation popup. Also resets the Configure panel
+  // back to the case's own default configuration, automatically, per
+  // explicit request — a completed run's own results (result/frame/KPIs/
+  // charts) stay exactly as they are so the user can keep reviewing them;
+  // only the *editable settings* snap back to their original values, so the
+  // next "Run Simulation" always starts from a clean baseline unless the
+  // user deliberately reconfigures again. This is distinct from abort()
+  // above, which deliberately keeps the user's current configuration —
+  // that's an interrupted run, not an acknowledged completed one.
+  const dismissFinalSummary = useCallback(() => {
+    setFinalSummary(null);
+    setConfig(JSON.parse(JSON.stringify(DEFAULT_CONFIG)));
+  }, []);
 
   // Abort: stops playback and clears the run entirely, back to the exact
   // pre-"Run Simulation" idle state (no result, no frame, status 'idle') —
